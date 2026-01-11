@@ -1,0 +1,306 @@
+<?php
+session_start();
+require_once "includes/conexion.php";
+
+// Si el carrito está vacío, mandar al cart
+if (!isset($_SESSION["carrito"]) || empty($_SESSION["carrito"])) {
+    header("Location: cart.php");
+    exit();
+}
+
+// Calcular totales
+$carrito = $_SESSION["carrito"];
+$total = 0;
+$itemsCarrito = 0;
+foreach ($carrito as $item) {
+    $total += $item["precio"] * $item["cantidad"];
+    $itemsCarrito += $item["cantidad"];
+}
+
+$errores = [];
+$pedidoCreado = false;
+$idPedidoNuevo = null;
+
+// Procesar envío del formulario
+if ($_SERVER["REQUEST_METHOD"] === "POST") {
+
+    // 1. Recoger datos de formulario
+    $nombre        = trim($_POST["nombre"]        ?? "");
+    $apellidos     = trim($_POST["apellidos"]     ?? "");
+    $email         = trim($_POST["email"]         ?? "");
+    $telefono      = trim($_POST["telefono"]      ?? "");
+    $direccion     = trim($_POST["direccion"]     ?? "");
+    $codigo_postal = trim($_POST["codigo_postal"] ?? "");
+    $ciudad        = trim($_POST["ciudad"]        ?? "");
+    $provincia     = trim($_POST["provincia"]     ?? "");
+    $pais          = trim($_POST["pais"]          ?? "España");
+    $notas         = trim($_POST["notas"]         ?? "");
+    $metodo_pago   = trim($_POST["metodo_pago"]   ?? "offline"); // de momento "offline"
+
+    // 2. Validaciones muy básicas
+    if ($nombre === "")        $errores[] = "Nombre es obligatorio.";
+    if ($apellidos === "")     $errores[] = "Apellidos son obligatorios.";
+    if ($email === "" || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $errores[] = "Email no es válido.";
+    }
+    if ($direccion === "")     $errores[] = "Dirección es obligatoria.";
+    if ($codigo_postal === "") $errores[] = "Código postal es obligatorio.";
+    if ($ciudad === "")        $errores[] = "Ciudad es obligatoria.";
+    if ($pais === "")          $errores[] = "País es obligatorio.";
+
+    if (empty($errores)) {
+
+        // 3. Crear pedido + detalle en una transacción
+        $conexion->begin_transaction();
+
+        try {
+            $id_usuario = $_SESSION["id_usuario"] ?? null;
+
+            $sqlPedido = "INSERT INTO pedidos
+                          (id_usuario, nombre, apellidos, email, telefono,
+                           direccion, codigo_postal, ciudad, provincia, pais,
+                           notas, fecha_pedido, estado, total, metodo_pago)
+                          VALUES
+                          (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 'pending', ?, ?)";
+
+            $stmtPedido = $conexion->prepare($sqlPedido);
+            if (!$stmtPedido) {
+                throw new Exception("Error al preparar pedido: " . $conexion->error);
+            }
+
+            $stmtPedido->bind_param(
+                "issssssssssds",
+                $id_usuario,
+                $nombre,
+                $apellidos,
+                $email,
+                $telefono,
+                $direccion,
+                $codigo_postal,
+                $ciudad,
+                $provincia,
+                $pais,
+                $notas,
+                $total,
+                $metodo_pago
+            );
+
+
+            if (!$stmtPedido->execute()) {
+                throw new Exception("Error al ejecutar pedido: " . $stmtPedido->error);
+            }
+
+            $idPedidoNuevo = $stmtPedido->insert_id;
+            $stmtPedido->close();
+
+            // 4. Insertar líneas en detalle_pedido
+            $sqlLinea = "INSERT INTO detalle_pedido
+                         (id_pedido, id_producto, cantidad, precio_unitario)
+                         VALUES (?, ?, ?, ?)";
+            $stmtLinea = $conexion->prepare($sqlLinea);
+            if (!$stmtLinea) {
+                throw new Exception("Error al preparar detalle: " . $conexion->error);
+            }
+
+            foreach ($carrito as $item) {
+                $idProd   = (int)$item["id"];
+                $cantidad = (int)$item["cantidad"];
+                $precio   = (float)$item["precio"];
+
+                $stmtLinea->bind_param("iiid", $idPedidoNuevo, $idProd, $cantidad, $precio);
+                if (!$stmtLinea->execute()) {
+                    throw new Exception("Error al insertar detalle: " . $stmtLinea->error);
+                }
+            }
+
+            $stmtLinea->close();
+
+            // 5. Todo OK -> commit y vaciar carrito
+            $conexion->commit();
+            $pedidoCreado = true;
+            unset($_SESSION["carrito"]);
+
+        } catch (Exception $e) {
+            $conexion->rollback();
+            $errores[] = $e->getMessage();
+        }
+    }
+}
+?>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Checkout | Gargot</title>
+    <link rel="stylesheet" href="css/estilos.css">
+</head>
+<body>
+
+<header class="header">
+    <div class="logo">
+        <a href="index.php">
+            <img src="img/logo.jpeg" alt="Gargot logo" class="logo-img">
+        </a>
+    </div>
+
+    <nav class="menu">
+        <a href="new_in.php">NEW IN</a>
+        <a href="shop.php">SHOP</a>
+        <a href="renting/how_it_works.php">RENTING</a>
+        <a href="shipping_returns.php">SHIPPING & RETURNS</a>
+        <a href="contact.php">CONTACT</a>
+        <a href="user/wishlist.php">WISHLIST</a>
+        <a href="cart.php">CART (<?php echo $itemsCarrito; ?>)</a>
+
+        <?php if (isset($_SESSION["id_usuario"])): ?>
+            <a href="<?php echo ($_SESSION["rol"] == 'admin') ? 'admin/index.php' : 'user/index.php'; ?>">
+                MY ACCOUNT
+            </a>
+            <a href="logout.php">LOG OUT</a>
+        <?php else: ?>
+            <a href="login.php">LOG IN</a>
+        <?php endif; ?>
+    </nav>
+</header>
+
+<main class="contenedor">
+    <h1 class="titulo-pagina">CHECKOUT</h1>
+
+    <?php if ($pedidoCreado): ?>
+        <p class="descripcion-pequena">
+            Gracias por tu pedido. Nº de pedido: <?php echo (int)$idPedidoNuevo; ?>.<br>
+            Ahora mismo el pago está marcado como <strong>pendiente</strong>.
+        </p>
+    <?php else: ?>
+
+        <?php if (!empty($errores)): ?>
+            <div class="admin-errors">
+                <?php foreach ($errores as $e): ?>
+                    <div>• <?php echo htmlspecialchars($e); ?></div>
+                <?php endforeach; ?>
+            </div>
+        <?php endif; ?>
+
+        <!-- Resumen del carrito -->
+        <h2 class="subtitulo">Order summary</h2>
+        <table class="cart-table">
+            <tr>
+                <th>Product</th>
+                <th>Qty</th>
+                <th>Subtotal</th>
+            </tr>
+            <?php foreach ($carrito as $p): ?>
+                <tr>
+                    <td class="cart-product">
+                        <?php if (!empty($p["imagen"])): ?>
+                            <img src="<?php echo htmlspecialchars($p["imagen"]); ?>" alt="">
+                        <?php endif; ?>
+                        <?php echo htmlspecialchars($p["nombre"]); ?>
+                    </td>
+                    <td><?php echo (int)$p["cantidad"]; ?></td>
+                    <td><?php echo number_format($p["precio"] * $p["cantidad"], 2); ?> €</td>
+                </tr>
+            <?php endforeach; ?>
+        </table>
+
+        <div class="cart-total">
+            <span>Total: <?php echo number_format($total, 2); ?> €</span>
+        </div>
+
+        <!-- Formulario de envío/facturación -->
+        <h2 class="subtitulo" style="margin-top:30px;">Shipping / billing details</h2>
+
+        <form method="post" class="checkout-form">
+            <div class="checkout-row">
+                <label>
+                    <span>Nombre</span>
+                    <input type="text" name="nombre" required
+                           value="<?php echo htmlspecialchars($_POST["nombre"] ?? ""); ?>">
+                </label>
+                <label>
+                    <span>Apellidos</span>
+                    <input type="text" name="apellidos" required
+                           value="<?php echo htmlspecialchars($_POST["apellidos"] ?? ""); ?>">
+                </label>
+            </div>
+
+            <div class="checkout-row">
+                <label>
+                    <span>Email</span>
+                    <input type="email" name="email" required
+                           value="<?php echo htmlspecialchars($_POST["email"] ?? ""); ?>">
+                </label>
+                <label>
+                    <span>Teléfono</span>
+                    <input type="text" name="telefono"
+                           value="<?php echo htmlspecialchars($_POST["telefono"] ?? ""); ?>">
+                </label>
+            </div>
+
+            <div class="checkout-row">
+                <label>
+                    <span>Dirección</span>
+                    <input type="text" name="direccion" required
+                           value="<?php echo htmlspecialchars($_POST["direccion"] ?? ""); ?>">
+                </label>
+            </div>
+
+            <div class="checkout-row">
+                <label>
+                    <span>Código postal</span>
+                    <input type="text" name="codigo_postal" required
+                           value="<?php echo htmlspecialchars($_POST["codigo_postal"] ?? ""); ?>">
+                </label>
+                <label>
+                    <span>Ciudad</span>
+                    <input type="text" name="ciudad" required
+                           value="<?php echo htmlspecialchars($_POST["ciudad"] ?? ""); ?>">
+                </label>
+            </div>
+
+            <div class="checkout-row">
+                <label>
+                    <span>Provincia</span>
+                    <input type="text" name="provincia"
+                           value="<?php echo htmlspecialchars($_POST["provincia"] ?? ""); ?>">
+                </label>
+                <label>
+                    <span>País</span>
+                    <input type="text" name="pais"
+                           value="<?php echo htmlspecialchars($_POST["pais"] ?? "España"); ?>">
+                </label>
+            </div>
+
+            <div class="checkout-row">
+                <label>
+                    <span>Notas del pedido</span>
+                    <textarea name="notas" rows="3"><?php
+                        echo htmlspecialchars($_POST["notas"] ?? "");
+                    ?></textarea>
+                </label>
+            </div>
+
+            <div class="checkout-row">
+                <label>
+                    <span>Método de pago</span>
+                    <select name="metodo_pago">
+                        <option value="offline"<?php
+                            echo (($_POST["metodo_pago"] ?? "") === "offline") ? " selected" : "";
+                        ?>>Pago offline / transferencia</option>
+                        <!-- futuros métodos: stripe, redsys, paypal... -->
+                    </select>
+                </label>
+            </div>
+
+            <div class="cart-actions" style="margin-top: 24px;">
+                <a href="cart.php" class="btn-product">back to cart</a>
+                <button type="submit" class="btn-product">confirm order</button>
+            </div>
+        </form>
+
+    <?php endif; ?>
+</main>
+
+</body>
+</html>
+

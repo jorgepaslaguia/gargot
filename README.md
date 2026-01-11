@@ -5,8 +5,8 @@ Este repositorio contiene el proyecto completo con:
 - Base de datos exportada (`gargot.sql`)
 - Manual de uso completo en PDF
 
-👉 Manual de uso (descargar):
-https://raw.githubusercontent.com/jorgepaslaguia/gargot/main/manualgargot.pdf
+Manual de uso (descargar):
+https://raw.githubusercontent.com/jorgepaslaguia/gargot/main/manualgargot.md
 
 ## Cómo probarlo
 1. Importar `gargot.sql` en tu servidor MySQL

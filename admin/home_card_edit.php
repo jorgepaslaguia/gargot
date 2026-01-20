@@ -67,8 +67,9 @@ function normalize_card_link($url, $basePath) {
 
 // Helper: detectar si existe la columna card_size (para degradar sin romper)
 $hasCardSize = false;
-$colCheck = $conexion->query("SHOW COLUMNS FROM home_cards LIKE 'card_size'");
-if ($colCheck && $colCheck->num_rows > 0) {
+$colCheck = $pdo->query("SHOW COLUMNS FROM home_cards LIKE 'card_size'");
+$colRows = $colCheck ? $colCheck->fetchAll() : [];
+if (count($colRows) > 0) {
     $hasCardSize = true;
 }
 
@@ -76,18 +77,13 @@ if ($colCheck && $colCheck->num_rows > 0) {
 $categorias = [];
 $familias   = [];
 
-$resCat = $conexion->query("SELECT id_categoria, nombre FROM categorias ORDER BY nombre ASC");
-if ($resCat) {
-    while ($row = $resCat->fetch_assoc()) {
-        $categorias[] = $row;
-    }
-}
+$resCat = $pdo->query("SELECT id_categoria, nombre FROM categorias ORDER BY nombre ASC");
+$categorias = $resCat ? $resCat->fetchAll() : [];
 
-$resFam = $conexion->query("SELECT DISTINCT familia FROM productos WHERE familia IS NOT NULL AND familia <> '' ORDER BY familia ASC");
-if ($resFam) {
-    while ($row = $resFam->fetch_assoc()) {
-        $familias[] = $row["familia"];
-    }
+$resFam = $pdo->query("SELECT DISTINCT familia FROM productos WHERE familia IS NOT NULL AND familia <> '' ORDER BY familia ASC");
+$familiasRows = $resFam ? $resFam->fetchAll() : [];
+foreach ($familiasRows as $row) {
+    $familias[] = $row["familia"];
 }
 
 // Card existente (si viene id)
@@ -105,14 +101,13 @@ $card = [
 
 if ($id > 0) {
     $sql = $hasCardSize
-        ? "SELECT * FROM home_cards WHERE id = ?"
-        : "SELECT id, title, subtitle, image_path, link_url, sort_order, active FROM home_cards WHERE id = ?";
+        ? "SELECT * FROM home_cards WHERE id = :id"
+        : "SELECT id, title, subtitle, image_path, link_url, sort_order, active FROM home_cards WHERE id = :id";
 
-    $stmt = $conexion->prepare($sql);
-    $stmt->bind_param("i", $id);
-    $stmt->execute();
-    $res = $stmt->get_result();
-    if ($fila = $res->fetch_assoc()) {
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute(["id" => $id]);
+    $fila = $stmt->fetch();
+    if ($fila) {
         $card = array_merge($card, $fila);
         if (!$hasCardSize) {
             $card['card_size'] = 'md';
@@ -157,32 +152,63 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($id > 0) {
         if ($hasCardSize) {
             $sql = "UPDATE home_cards 
-                    SET title = ?, subtitle = ?, image_path = ?, link_url = ?, sort_order = ?, active = ?, card_size = ?
-                    WHERE id = ?";
-            $stmt = $conexion->prepare($sql);
-            $stmt->bind_param("ssssiisi", $title, $subtitle, $imagePath, $link_url, $sort_order, $active, $card_size, $id);
+                    SET title = :title, subtitle = :subtitle, image_path = :image_path, link_url = :link_url, sort_order = :sort_order, active = :active, card_size = :card_size
+                    WHERE id = :id";
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute([
+                "title" => $title,
+                "subtitle" => $subtitle,
+                "image_path" => $imagePath,
+                "link_url" => $link_url,
+                "sort_order" => $sort_order,
+                "active" => $active,
+                "card_size" => $card_size,
+                "id" => $id,
+            ]);
         } else {
             $sql = "UPDATE home_cards 
-                    SET title = ?, subtitle = ?, image_path = ?, link_url = ?, sort_order = ?, active = ?
-                    WHERE id = ?";
-            $stmt = $conexion->prepare($sql);
-            $stmt->bind_param("ssssisi", $title, $subtitle, $imagePath, $link_url, $sort_order, $active, $id);
+                    SET title = :title, subtitle = :subtitle, image_path = :image_path, link_url = :link_url, sort_order = :sort_order, active = :active
+                    WHERE id = :id";
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute([
+                "title" => $title,
+                "subtitle" => $subtitle,
+                "image_path" => $imagePath,
+                "link_url" => $link_url,
+                "sort_order" => $sort_order,
+                "active" => $active,
+                "id" => $id,
+            ]);
         }
     } else {
         if ($hasCardSize) {
             $sql = "INSERT INTO home_cards (title, subtitle, image_path, link_url, sort_order, active, card_size)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)";
-            $stmt = $conexion->prepare($sql);
-            $stmt->bind_param("ssssiss", $title, $subtitle, $imagePath, $link_url, $sort_order, $active, $card_size);
+                    VALUES (:title, :subtitle, :image_path, :link_url, :sort_order, :active, :card_size)";
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute([
+                "title" => $title,
+                "subtitle" => $subtitle,
+                "image_path" => $imagePath,
+                "link_url" => $link_url,
+                "sort_order" => $sort_order,
+                "active" => $active,
+                "card_size" => $card_size,
+            ]);
         } else {
             $sql = "INSERT INTO home_cards (title, subtitle, image_path, link_url, sort_order, active)
-                    VALUES (?, ?, ?, ?, ?, ?)";
-            $stmt = $conexion->prepare($sql);
-            $stmt->bind_param("ssssii", $title, $subtitle, $imagePath, $link_url, $sort_order, $active);
+                    VALUES (:title, :subtitle, :image_path, :link_url, :sort_order, :active)";
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute([
+                "title" => $title,
+                "subtitle" => $subtitle,
+                "image_path" => $imagePath,
+                "link_url" => $link_url,
+                "sort_order" => $sort_order,
+                "active" => $active,
+            ]);
         }
     }
 
-    $stmt->execute();
     header("Location: home_cards.php");
     exit();
 }

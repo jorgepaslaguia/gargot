@@ -34,23 +34,22 @@ if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
 
 try {
     $sql = 'INSERT INTO newsletter_subscribers (email, created_at, last_update, is_active, first_source, last_ip)
-            VALUES (?, NOW(), NOW(), 1, ?, ?)
+            VALUES (:email, NOW(), NOW(), 1, :source, :ip)
             ON DUPLICATE KEY UPDATE
                 last_update = NOW(),
                 is_active = 1,
                 last_ip = VALUES(last_ip)';
 
-    $stmt = $conexion->prepare($sql);
-    if (!$stmt) {
-        throw new Exception('DB prepare error: ' . $conexion->error);
-    }
+    $stmt = $pdo->prepare($sql);
 
     $source = 'site_footer';
     $ip     = $_SERVER['REMOTE_ADDR'] ?? null;
 
-    $stmt->bind_param('sss', $email, $source, $ip);
-    $stmt->execute();
-    $stmt->close();
+    $stmt->execute([
+        'email' => $email,
+        'source' => $source,
+        'ip' => $ip,
+    ]);
 
     $_SESSION['newsletter_closed'] = true;
 

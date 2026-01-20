@@ -43,13 +43,12 @@ if (
     $estado    = isset($_POST["estado"]) ? trim($_POST["estado"]) : "";
 
     if ($id_pedido > 0 && in_array($estado, $estadosPermitidos, true)) {
-        $sqlUpd  = "UPDATE pedidos SET estado = ? WHERE id_pedido = ?";
-        $stmtUpd = $conexion->prepare($sqlUpd);
-        if ($stmtUpd) {
-            $stmtUpd->bind_param("si", $estado, $id_pedido);
-            $stmtUpd->execute();
-            $stmtUpd->close();
-        }
+        $sqlUpd  = "UPDATE pedidos SET estado = :estado WHERE id_pedido = :id_pedido";
+        $stmtUpd = $pdo->prepare($sqlUpd);
+        $stmtUpd->execute([
+            "estado" => $estado,
+            "id_pedido" => $id_pedido,
+        ]);
     }
 
     // Redirección para evitar reenvío de formulario
@@ -61,29 +60,22 @@ if (
    LISTADO DE PEDIDOS
 ============================ */
 $where  = [];
-$types  = "";
 $params = [];
 
 if ($statusFilter !== "") {
-    $where[] = "p.estado = ?";
-    $types  .= "s";
-    $params[] = $statusFilter;
+    $where[] = "p.estado = :estado";
+    $params["estado"] = $statusFilter;
 }
 
 if ($payFilter !== "") {
-    $where[] = "p.metodo_pago = ?";
-    $types  .= "s";
-    $params[] = $payFilter;
+    $where[] = "p.metodo_pago = :metodo_pago";
+    $params["metodo_pago"] = $payFilter;
 }
 
 if ($search !== "") {
-    $where[] = "(p.nombre LIKE ? OR p.apellidos LIKE ? OR p.email LIKE ? OR p.id_pedido = ?)";
-    $like = "%".$search."%";
-    $types .= "sssi";
-    $params[] = $like;
-    $params[] = $like;
-    $params[] = $like;
-    $params[] = (int)$search;
+    $where[] = "(p.nombre LIKE :search_like OR p.apellidos LIKE :search_like OR p.email LIKE :search_like OR p.id_pedido = :search_id)";
+    $params["search_like"] = "%" . $search . "%";
+    $params["search_id"] = (int)$search;
 }
 
 $sql = "
@@ -132,37 +124,27 @@ $sql .= "
     ORDER BY p.fecha_pedido DESC, p.id_pedido DESC
 ";
 
-$stmtList = $conexion->prepare($sql);
-if ($stmtList && $types !== "") {
-    $stmtList->bind_param($types, ...$params);
-}
-if ($stmtList) {
-    $stmtList->execute();
-    $res = $stmtList->get_result();
-    $stmtList->close();
-} else {
-    $res = false;
-}
+$stmtList = $pdo->prepare($sql);
+$stmtList->execute($params);
+$rows = $stmtList->fetchAll();
 
 // Conteo por estado
 $statusCounts = array_fill_keys($estadosPermitidos, 0);
-$cntRes = $conexion->query("SELECT estado, COUNT(*) as c FROM pedidos GROUP BY estado");
-if ($cntRes && $cntRes->num_rows > 0) {
-    while ($rowC = $cntRes->fetch_assoc()) {
-        $estadoKey = $rowC["estado"];
-        if (isset($statusCounts[$estadoKey])) {
-            $statusCounts[$estadoKey] = (int)$rowC["c"];
-        }
+$cntRes = $pdo->query("SELECT estado, COUNT(*) as c FROM pedidos GROUP BY estado");
+$cntRows = $cntRes ? $cntRes->fetchAll() : [];
+foreach ($cntRows as $rowC) {
+    $estadoKey = $rowC["estado"];
+    if (isset($statusCounts[$estadoKey])) {
+        $statusCounts[$estadoKey] = (int)$rowC["c"];
     }
 }
 
 // Metodos de pago disponibles
 $metodosPago = [];
-$resPago = $conexion->query("SELECT DISTINCT metodo_pago FROM pedidos WHERE metodo_pago IS NOT NULL AND metodo_pago <> '' ORDER BY metodo_pago ASC");
-if ($resPago && $resPago->num_rows > 0) {
-    while ($rowP = $resPago->fetch_assoc()) {
-        $metodosPago[] = $rowP["metodo_pago"];
-    }
+$resPago = $pdo->query("SELECT DISTINCT metodo_pago FROM pedidos WHERE metodo_pago IS NOT NULL AND metodo_pago <> '' ORDER BY metodo_pago ASC");
+$rowsPago = $resPago ? $resPago->fetchAll() : [];
+foreach ($rowsPago as $rowP) {
+    $metodosPago[] = $rowP["metodo_pago"];
 }
 
 ?>
@@ -242,7 +224,7 @@ if ($resPago && $resPago->num_rows > 0) {
             <a href="shipments.php" class="btn-filtros-clear">clear</a>
         </form>
 
-        <?php if ($res && $res->num_rows > 0): ?>
+        <?php if (count($rows) > 0): ?>
             <table class="admin-table">
                 <thead>
                 <tr>
@@ -258,7 +240,7 @@ if ($resPago && $resPago->num_rows > 0) {
                 </tr>
                 </thead>
                 <tbody>
-<?php while ($row = $res->fetch_assoc()): ?>
+<?php foreach ($rows as $row): ?>
     <?php
         $estadoBD = (string)$row["estado"];
         $estadoClass = in_array($estadoBD, $estadosPermitidos, true)
@@ -327,13 +309,11 @@ if ($resPago && $resPago->num_rows > 0) {
             </div>
         </td>
     </tr>
-<?php endwhile; ?>
+<?php endforeach; ?>
 </tbody>
             </table>
-        <?php elseif ($res && $res->num_rows === 0): ?>
-            <p class="txt-secundario">no orders yet.</p>
         <?php else: ?>
-            <p class="txt-secundario">error loading orders.</p>
+            <p class="txt-secundario">no orders yet.</p>
         <?php endif; ?>
     </section>
 </main>

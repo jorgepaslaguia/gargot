@@ -16,26 +16,20 @@ if (isset($_POST["id_producto"])) {
 
 if ($id > 0) {
     $imagenes = [];
-    $stmtImg = $conexion->prepare("SELECT image_path FROM producto_imagenes WHERE id_producto = ?");
-    $stmtImg->bind_param("i", $id);
-    $stmtImg->execute();
-    $resImg = $stmtImg->get_result();
-    while ($row = $resImg->fetch_assoc()) {
+    $stmtImg = $pdo->prepare("SELECT image_path FROM producto_imagenes WHERE id_producto = :id_producto");
+    $stmtImg->execute(["id_producto" => $id]);
+    $rowsImg = $stmtImg->fetchAll();
+    foreach ($rowsImg as $row) {
         if (!empty($row["image_path"])) {
             $imagenes[] = $row["image_path"];
         }
     }
-    $stmtImg->close();
 
-    $stmtDelImgs = $conexion->prepare("DELETE FROM producto_imagenes WHERE id_producto = ?");
-    $stmtDelImgs->bind_param("i", $id);
-    $stmtDelImgs->execute();
-    $stmtDelImgs->close();
+    $stmtDelImgs = $pdo->prepare("DELETE FROM producto_imagenes WHERE id_producto = :id_producto");
+    $stmtDelImgs->execute(["id_producto" => $id]);
 
-    $stmtDel = $conexion->prepare("DELETE FROM productos WHERE id_producto = ?");
-    $stmtDel->bind_param("i", $id);
-    $stmtDel->execute();
-    $stmtDel->close();
+    $stmtDel = $pdo->prepare("DELETE FROM productos WHERE id_producto = :id_producto");
+    $stmtDel->execute(["id_producto" => $id]);
 
     $baseDir = realpath(__DIR__ . "/../img/products");
     if ($baseDir) {

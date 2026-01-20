@@ -11,19 +11,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
     $deleteId = intval($_POST['id'] ?? 0);
     if ($deleteId > 0) {
         $imagePath = '';
-        $stmtSel = $conexion->prepare("SELECT image_path FROM home_cards WHERE id = ?");
-        $stmtSel->bind_param("i", $deleteId);
-        $stmtSel->execute();
-        $resSel = $stmtSel->get_result();
-        if ($rowSel = $resSel->fetch_assoc()) {
+        $stmtSel = $pdo->prepare("SELECT image_path FROM home_cards WHERE id = :id");
+        $stmtSel->execute(["id" => $deleteId]);
+        $rowSel = $stmtSel->fetch();
+        if ($rowSel) {
             $imagePath = $rowSel['image_path'] ?? '';
         }
-        $stmtSel->close();
 
-        $stmtDel = $conexion->prepare("DELETE FROM home_cards WHERE id = ?");
-        $stmtDel->bind_param("i", $deleteId);
-        $stmtDel->execute();
-        $stmtDel->close();
+        $stmtDel = $pdo->prepare("DELETE FROM home_cards WHERE id = :id");
+        $stmtDel->execute(["id" => $deleteId]);
 
         $baseDir = realpath(__DIR__ . "/../img/home");
         if ($baseDir && $imagePath !== '') {
@@ -38,8 +34,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
 }
 
 $hasCardSize = false;
-$colCheck = $conexion->query("SHOW COLUMNS FROM home_cards LIKE 'card_size'");
-if ($colCheck && $colCheck->num_rows > 0) {
+$colCheck = $pdo->query("SHOW COLUMNS FROM home_cards LIKE 'card_size'");
+$colRows = $colCheck ? $colCheck->fetchAll() : [];
+if (count($colRows) > 0) {
     $hasCardSize = true;
 }
 
@@ -51,7 +48,8 @@ $sql = $hasCardSize
        FROM home_cards
        ORDER BY sort_order ASC, id ASC";
 
-$res = $conexion->query($sql);
+$stmt = $pdo->query($sql);
+$rows = $stmt ? $stmt->fetchAll() : [];
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -81,7 +79,7 @@ $res = $conexion->query($sql);
             <a href="home_card_edit.php" class="btn-admin">add_new_card</a>
         </div>
 
-        <?php if ($res && $res->num_rows > 0): ?>
+        <?php if (count($rows) > 0): ?>
             <table class="admin-table">
                 <thead>
                     <tr>
@@ -99,7 +97,7 @@ $res = $conexion->query($sql);
                     </tr>
                 </thead>
                 <tbody>
-                <?php while ($c = $res->fetch_assoc()): ?>
+                <?php foreach ($rows as $c): ?>
                     <tr>
                         <td><?php echo $c["id"]; ?></td>
                         <td><?php echo htmlspecialchars($c["title"]); ?></td>
@@ -120,7 +118,7 @@ $res = $conexion->query($sql);
                             </form>
                         </td>
                     </tr>
-                <?php endwhile; ?>
+                <?php endforeach; ?>
                 </tbody>
             </table>
         <?php else: ?>

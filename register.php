@@ -34,27 +34,29 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     }
 
     if (empty($errores)) {
-        $stmt = $conexion->prepare("SELECT id_usuario FROM usuarios WHERE email = ?");
-        $stmt->bind_param("s", $email);
-        $stmt->execute();
-        $stmt->store_result();
-        if ($stmt->num_rows > 0) {
+        $stmt = $pdo->prepare("SELECT id_usuario FROM usuarios WHERE email = :email");
+        $stmt->execute(["email" => $email]);
+        $row = $stmt->fetch();
+        if ($row) {
             $errores[] = "Ya existe un usuario registrado con ese email.";
         }
-        $stmt->close();
     }
 
     if (empty($errores)) {
         $hash = password_hash($password, PASSWORD_DEFAULT);
-        $sql = "INSERT INTO usuarios (nombre, apellidos, email, password, telefono, rol) VALUES (?, ?, ?, ?, ?, 'cliente')";
-        $stmt = $conexion->prepare($sql);
-        $stmt->bind_param("sssss", $nombre, $apellidos, $email, $hash, $telefono);
-        if ($stmt->execute()) {
+        $sql = "INSERT INTO usuarios (nombre, apellidos, email, password, telefono, rol) VALUES (:nombre, :apellidos, :email, :password, :telefono, 'cliente')";
+        $stmt = $pdo->prepare($sql);
+        if ($stmt->execute([
+            "nombre" => $nombre,
+            "apellidos" => $apellidos,
+            "email" => $email,
+            "password" => $hash,
+            "telefono" => $telefono,
+        ])) {
             $exito = "Usuario registrado correctamente. Ya puedes iniciar sesión.";
         } else {
             $errores[] = "Error al registrar el usuario.";
         }
-        $stmt->close();
     }
 }
 
@@ -135,3 +137,4 @@ $wishlistCount = !empty($_SESSION["wishlist"]) ? count($_SESSION["wishlist"]) : 
 
 </body>
 </html>
+

@@ -9,8 +9,9 @@ require_once "../includes/conexion.php";
 
 // Visibilidad
 $hasVisibility = false;
-$colCheck = $conexion->query("SHOW COLUMNS FROM productos LIKE 'is_visible'");
-if ($colCheck && $colCheck->num_rows > 0) $hasVisibility = true;
+$colCheck = $pdo->query("SHOW COLUMNS FROM productos LIKE 'is_visible'");
+$colRows = $colCheck ? $colCheck->fetchAll() : [];
+if (count($colRows) > 0) $hasVisibility = true;
 
 // CSRF
 if (empty($_SESSION["csrf_token"])) {
@@ -19,7 +20,8 @@ if (empty($_SESSION["csrf_token"])) {
 $csrfToken = $_SESSION["csrf_token"];
 
 // Categorías
-$resCat = $conexion->query("SELECT id_categoria, nombre FROM categorias ORDER BY nombre ASC");
+$resCat = $pdo->query("SELECT id_categoria, nombre FROM categorias ORDER BY nombre ASC");
+$categorias = $resCat ? $resCat->fetchAll() : [];
 
 $errores = [];
 
@@ -121,17 +123,16 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     }
 
     if (empty($errores)) {
-        $conexion->begin_transaction();
+        $pdo->beginTransaction();
         try {
             $sql = "INSERT INTO productos
                     (nombre, familia, talla, id_categoria, marca, precio, descuento, stock, imagen, descripcion";
             if ($hasVisibility) $sql .= ", is_visible";
             $sql .= ", fecha_creacion)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?";
-            if ($hasVisibility) $sql .= ", ?";
+                    VALUES (:nombre, :familia, :talla, :id_categoria, :marca, :precio, :descuento, :stock, :imagen, :descripcion";
+            if ($hasVisibility) $sql .= ", :is_visible";
             $sql .= ", NOW())";
 
-            $stmt = $conexion->prepare($sql);
             $imagenPrincipal = $imagenes[0] ?? '';
             if (!empty($imagenesOrden)) {
                 $minIdx = array_search(min($imagenesOrden), $imagenesOrden, true);
@@ -139,30 +140,42 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                     $imagenPrincipal = $imagenes[$minIdx];
                 }
             }
+            $params = [
+                "nombre" => $nombre,
+                "familia" => $familia,
+                "talla" => $talla,
+                "id_categoria" => $id_categoria,
+                "marca" => $marca,
+                "precio" => $precio,
+                "descuento" => $descuento,
+                "stock" => $stock,
+                "imagen" => $imagenPrincipal,
+                "descripcion" => $descripcion,
+            ];
             if ($hasVisibility) {
-                $stmt->bind_param("sssisddissi", $nombre, $familia, $talla, $id_categoria, $marca, $precio, $descuento, $stock, $imagenPrincipal, $descripcion, $isVisible);
-            } else {
-                $stmt->bind_param("sssisddiss", $nombre, $familia, $talla, $id_categoria, $marca, $precio, $descuento, $stock, $imagenPrincipal, $descripcion);
+                $params["is_visible"] = $isVisible;
             }
-            if (!$stmt->execute()) throw new Exception("db insert producto: " . $stmt->error);
-            $idProducto = $stmt->insert_id;
-            $stmt->close();
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute($params);
+            $idProducto = (int)$pdo->lastInsertId();
 
             if (count($imagenes) > 0) {
-                $stmtImg = $conexion->prepare("INSERT INTO producto_imagenes (id_producto, image_path, orden) VALUES (?, ?, ?)");
+                $stmtImg = $pdo->prepare("INSERT INTO producto_imagenes (id_producto, image_path, orden) VALUES (:id_producto, :image_path, :orden)");
                 foreach ($imagenes as $idx => $ruta) {
                     $orden = $imagenesOrden[$idx] ?? ($idx + 1);
-                    $stmtImg->bind_param("isi", $idProducto, $ruta, $orden);
-                    $stmtImg->execute();
+                    $stmtImg->execute([
+                        "id_producto" => $idProducto,
+                        "image_path" => $ruta,
+                        "orden" => $orden,
+                    ]);
                 }
-                $stmtImg->close();
             }
 
-            $conexion->commit();
+            $pdo->commit();
             header("Location: products.php");
             exit();
         } catch (Exception $ex) {
-            $conexion->rollback();
+            $pdo->rollBack();
             $errores[] = $ex->getMessage();
         }
     }
@@ -211,11 +224,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             <label>category</label>
             <select name="id_categoria">
                 <option value="">-- select --</option>
-                <?php if ($resCat): while ($cat = $resCat->fetch_assoc()): ?>
+                <?php foreach ($categorias as $cat): ?>
                     <option value="<?php echo (int)$cat['id_categoria']; ?>" <?php if ($id_categoria == $cat['id_categoria']) echo 'selected'; ?>>
                         <?php echo htmlspecialchars($cat['nombre']); ?>
                     </option>
-                <?php endwhile; endif; ?>
+                <?php endforeach; ?>
             </select>
         </div>
 

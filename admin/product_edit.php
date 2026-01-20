@@ -9,8 +9,9 @@ require_once "../includes/conexion.php";
 
 // Visibilidad
 $hasVisibility = false;
-$colCheck = $conexion->query("SHOW COLUMNS FROM productos LIKE 'is_visible'");
-if ($colCheck && $colCheck->num_rows > 0) $hasVisibility = true;
+$colCheck = $pdo->query("SHOW COLUMNS FROM productos LIKE 'is_visible'");
+$colRows = $colCheck ? $colCheck->fetchAll() : [];
+if (count($colRows) > 0) $hasVisibility = true;
 
 // CSRF
 if (empty($_SESSION['csrf_token'])) {
@@ -19,7 +20,8 @@ if (empty($_SESSION['csrf_token'])) {
 $csrfToken = $_SESSION['csrf_token'];
 
 // Categorías
-$resCat = $conexion->query("SELECT id_categoria, nombre FROM categorias ORDER BY nombre ASC");
+$resCat = $pdo->query("SELECT id_categoria, nombre FROM categorias ORDER BY nombre ASC");
+$categorias = $resCat ? $resCat->fetchAll() : [];
 
 $id = isset($_GET['id']) ? intval($_GET['id']) : 0;
 $producto = [
@@ -40,25 +42,21 @@ $errores = [];
 
 // Cargar producto e imágenes
 if ($id > 0 && $_SERVER['REQUEST_METHOD'] === 'GET') {
-    $sql = "SELECT * FROM productos WHERE id_producto = ?";
-    $stmt = $conexion->prepare($sql);
-    $stmt->bind_param("i", $id);
-    $stmt->execute();
-    $res = $stmt->get_result();
-    if ($fila = $res->fetch_assoc()) {
+    $sql = "SELECT * FROM productos WHERE id_producto = :id_producto";
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute(["id_producto" => $id]);
+    $fila = $stmt->fetch();
+    if ($fila) {
         $producto = array_merge($producto, $fila);
     }
-    $stmt->close();
 
-    $sqlImg = "SELECT id, image_path, orden FROM producto_imagenes WHERE id_producto = ? ORDER BY orden ASC, id ASC";
-    $stmtImg = $conexion->prepare($sqlImg);
-    $stmtImg->bind_param("i", $id);
-    $stmtImg->execute();
-    $resImg = $stmtImg->get_result();
-    while ($row = $resImg->fetch_assoc()) {
+    $sqlImg = "SELECT id, image_path, orden FROM producto_imagenes WHERE id_producto = :id_producto ORDER BY orden ASC, id ASC";
+    $stmtImg = $pdo->prepare($sqlImg);
+    $stmtImg->execute(["id_producto" => $id]);
+    $rowsImg = $stmtImg->fetchAll();
+    foreach ($rowsImg as $row) {
         $imagenes_existentes[] = $row;
     }
-    $stmtImg->close();
 }
 
 // Guardar
@@ -99,15 +97,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Imágenes existentes
     $existingImages = [];
     if ($id > 0) {
-        $sqlImg = "SELECT id, image_path, orden FROM producto_imagenes WHERE id_producto = ? ORDER BY orden ASC, id ASC";
-        $stmtImg = $conexion->prepare($sqlImg);
-        $stmtImg->bind_param("i", $id);
-        $stmtImg->execute();
-        $resImg = $stmtImg->get_result();
-        while ($row = $resImg->fetch_assoc()) {
+        $sqlImg = "SELECT id, image_path, orden FROM producto_imagenes WHERE id_producto = :id_producto ORDER BY orden ASC, id ASC";
+        $stmtImg = $pdo->prepare($sqlImg);
+        $stmtImg->execute(["id_producto" => $id]);
+        $rowsImg = $stmtImg->fetchAll();
+        foreach ($rowsImg as $row) {
             $existingImages[] = $row;
         }
-        $stmtImg->close();
     }
 
     $deleteIds = $_POST['delete_images'] ?? [];
@@ -231,134 +227,123 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (empty($errores)) {
-        $conexion->begin_transaction();
+        $pdo->beginTransaction();
         try {
             if ($id > 0) {
                 $sql = "UPDATE productos
-                        SET nombre = ?, familia = ?, talla = ?, id_categoria = ?, marca = ?, precio = ?, descuento = ?, stock = ?, descripcion = ?";
+                        SET nombre = :nombre, familia = :familia, talla = :talla, id_categoria = :id_categoria, marca = :marca, precio = :precio, descuento = :descuento, stock = :stock, descripcion = :descripcion";
                 if ($hasVisibility) {
-                    $sql .= ", is_visible = ?";
+                    $sql .= ", is_visible = :is_visible";
                 }
-                $sql .= " WHERE id_producto = ?";
-                $stmt = $conexion->prepare($sql);
+                $sql .= " WHERE id_producto = :id_producto";
+                $params = [
+                    "nombre" => $nombre,
+                    "familia" => $familia,
+                    "talla" => $talla,
+                    "id_categoria" => $idCategoria,
+                    "marca" => $marca,
+                    "precio" => $precio,
+                    "descuento" => $descuento,
+                    "stock" => $stock,
+                    "descripcion" => $descripcion,
+                    "id_producto" => $id,
+                ];
                 if ($hasVisibility) {
-                    $bindTypes  = "sssisddisii";
-                    $bindValues = [$nombre, $familia, $talla, $idCategoria, $marca, $precio, $descuento, $stock, $descripcion, $isVisible, $id];
-                    $placeholders = substr_count($sql, '?');
-                    if ($placeholders !== strlen($bindTypes) || $placeholders !== count($bindValues)) {
-                        $msg = "bind mismatch productos update: placeholders={$placeholders} types=" . strlen($bindTypes) . " vars=" . count($bindValues);
-                        error_log($msg);
-                        throw new Exception($msg);
-                    }
-                    $stmt->bind_param($bindTypes, $nombre, $familia, $talla, $idCategoria, $marca, $precio, $descuento, $stock, $descripcion, $isVisible, $id);
-                } else {
-                    $bindTypes  = "sssisddisi";
-                    $bindValues = [$nombre, $familia, $talla, $idCategoria, $marca, $precio, $descuento, $stock, $descripcion, $id];
-                    $placeholders = substr_count($sql, '?');
-                    if ($placeholders !== strlen($bindTypes) || $placeholders !== count($bindValues)) {
-                        $msg = "bind mismatch productos update: placeholders={$placeholders} types=" . strlen($bindTypes) . " vars=" . count($bindValues);
-                        error_log($msg);
-                        throw new Exception($msg);
-                    }
-                    $stmt->bind_param($bindTypes, $nombre, $familia, $talla, $idCategoria, $marca, $precio, $descuento, $stock, $descripcion, $id);
+                    $params["is_visible"] = $isVisible;
                 }
+                $stmt = $pdo->prepare($sql);
+                $stmt->execute($params);
             } else {
                 $sql = "INSERT INTO productos
                         (nombre, familia, talla, id_categoria, marca, precio, descuento, stock, imagen, descripcion";
                 if ($hasVisibility) {
                     $sql .= ", is_visible";
                 }
-                $sql .= ", fecha_creacion) VALUES (?,?,?,?,?,?,?,?,?,?";
+                $sql .= ", fecha_creacion) VALUES (:nombre, :familia, :talla, :id_categoria, :marca, :precio, :descuento, :stock, :imagen, :descripcion";
                 if ($hasVisibility) {
-                    $sql .= ",?";
+                    $sql .= ", :is_visible";
                 }
                 $sql .= ", NOW())";
 
-                $stmt = $conexion->prepare($sql);
                 $imagenVacia = '';
+                $params = [
+                    "nombre" => $nombre,
+                    "familia" => $familia,
+                    "talla" => $talla,
+                    "id_categoria" => $idCategoria,
+                    "marca" => $marca,
+                    "precio" => $precio,
+                    "descuento" => $descuento,
+                    "stock" => $stock,
+                    "imagen" => $imagenVacia,
+                    "descripcion" => $descripcion,
+                ];
                 if ($hasVisibility) {
-                    $bindTypes  = "sssisddissi";
-                    $bindValues = [$nombre, $familia, $talla, $idCategoria, $marca, $precio, $descuento, $stock, $imagenVacia, $descripcion, $isVisible];
-                    $placeholders = substr_count($sql, '?');
-                    if ($placeholders !== strlen($bindTypes) || $placeholders !== count($bindValues)) {
-                        $msg = "bind mismatch productos insert: placeholders={$placeholders} types=" . strlen($bindTypes) . " vars=" . count($bindValues);
-                        error_log($msg);
-                        throw new Exception($msg);
-                    }
-                    $stmt->bind_param($bindTypes, $nombre, $familia, $talla, $idCategoria, $marca, $precio, $descuento, $stock, $imagenVacia, $descripcion, $isVisible);
-                } else {
-                    $bindTypes  = "sssisddiss";
-                    $bindValues = [$nombre, $familia, $talla, $idCategoria, $marca, $precio, $descuento, $stock, $imagenVacia, $descripcion];
-                    $placeholders = substr_count($sql, '?');
-                    if ($placeholders !== strlen($bindTypes) || $placeholders !== count($bindValues)) {
-                        $msg = "bind mismatch productos insert: placeholders={$placeholders} types=" . strlen($bindTypes) . " vars=" . count($bindValues);
-                        error_log($msg);
-                        throw new Exception($msg);
-                    }
-                    $stmt->bind_param($bindTypes, $nombre, $familia, $talla, $idCategoria, $marca, $precio, $descuento, $stock, $imagenVacia, $descripcion);
+                    $params["is_visible"] = $isVisible;
                 }
+                $stmt = $pdo->prepare($sql);
+                $stmt->execute($params);
+                $id = (int)$pdo->lastInsertId();
             }
-
-            if (!$stmt->execute()) {
-                throw new Exception("db error productos: " . $stmt->error);
-            }
-            if ($id <= 0) $id = $stmt->insert_id;
-            $stmt->close();
 
             if (!empty($deleteIds)) {
-                $stmtDel = $conexion->prepare("DELETE FROM producto_imagenes WHERE id = ? AND id_producto = ?");
+                $stmtDel = $pdo->prepare("DELETE FROM producto_imagenes WHERE id = :id AND id_producto = :id_producto");
                 foreach ($deleteIds as $delId) {
-                    $stmtDel->bind_param("ii", $delId, $id);
-                    $stmtDel->execute();
+                    $stmtDel->execute([
+                        "id" => $delId,
+                        "id_producto" => $id,
+                    ]);
                 }
-                $stmtDel->close();
             }
 
             if (!empty($existingOrderMap)) {
-                $stmtOrd = $conexion->prepare("UPDATE producto_imagenes SET orden = ? WHERE id = ? AND id_producto = ?");
+                $stmtOrd = $pdo->prepare("UPDATE producto_imagenes SET orden = :orden WHERE id = :id AND id_producto = :id_producto");
                 foreach ($existingOrderMap as $imgId => $orden) {
-                    $stmtOrd->bind_param("iii", $orden, $imgId, $id);
-                    $stmtOrd->execute();
+                    $stmtOrd->execute([
+                        "orden" => $orden,
+                        "id" => $imgId,
+                        "id_producto" => $id,
+                    ]);
                 }
-                $stmtOrd->close();
             }
 
             if (!empty($imagenes_nuevas)) {
-                $stmtIns = $conexion->prepare("INSERT INTO producto_imagenes (id_producto, image_path, orden) VALUES (?, ?, ?)");
+                $stmtIns = $pdo->prepare("INSERT INTO producto_imagenes (id_producto, image_path, orden) VALUES (:id_producto, :image_path, :orden)");
                 foreach ($imagenes_nuevas as $idx => $ruta) {
                     $orden = $imagenes_nuevas_orden[$idx] ?? ($idx + 1);
-                    $stmtIns->bind_param("isi", $id, $ruta, $orden);
-                    $stmtIns->execute();
+                    $stmtIns->execute([
+                        "id_producto" => $id,
+                        "image_path" => $ruta,
+                        "orden" => $orden,
+                    ]);
                 }
-                $stmtIns->close();
             }
 
             $imagen_principal = $imagenPrincipal;
-            $stmtUpdImg = $conexion->prepare("UPDATE productos SET imagen = ? WHERE id_producto = ?");
-            $stmtUpdImg->bind_param("si", $imagen_principal, $id);
-            $stmtUpdImg->execute();
-            $stmtUpdImg->close();
+            $stmtUpdImg = $pdo->prepare("UPDATE productos SET imagen = :imagen WHERE id_producto = :id_producto");
+            $stmtUpdImg->execute([
+                "imagen" => $imagen_principal,
+                "id_producto" => $id,
+            ]);
 
-            $conexion->commit();
+            $pdo->commit();
             header("Location: products.php");
             exit();
         } catch (Exception $ex) {
-            $conexion->rollback();
+            $pdo->rollBack();
             $errores[] = $ex->getMessage();
         }
     }
 
     if ($id > 0) {
         $imagenes_existentes = [];
-        $sqlImg = "SELECT id, image_path, orden FROM producto_imagenes WHERE id_producto = ? ORDER BY orden ASC, id ASC";
-        $stmtImg = $conexion->prepare($sqlImg);
-        $stmtImg->bind_param("i", $id);
-        $stmtImg->execute();
-        $resImg = $stmtImg->get_result();
-        while ($row = $resImg->fetch_assoc()) {
+        $sqlImg = "SELECT id, image_path, orden FROM producto_imagenes WHERE id_producto = :id_producto ORDER BY orden ASC, id ASC";
+        $stmtImg = $pdo->prepare($sqlImg);
+        $stmtImg->execute(["id_producto" => $id]);
+        $rowsImg = $stmtImg->fetchAll();
+        foreach ($rowsImg as $row) {
             $imagenes_existentes[] = $row;
         }
-        $stmtImg->close();
     }
 }
 ?>
@@ -404,11 +389,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <label>category</label>
             <select name="id_categoria">
                 <option value="">-- select --</option>
-                <?php if ($resCat): while ($cat = $resCat->fetch_assoc()): ?>
+                <?php foreach ($categorias as $cat): ?>
                     <option value="<?php echo (int)$cat['id_categoria']; ?>" <?php if ($producto['id_categoria'] == $cat['id_categoria']) echo 'selected'; ?>>
                         <?php echo htmlspecialchars($cat['nombre']); ?>
                     </option>
-                <?php endwhile; endif; ?>
+                <?php endforeach; ?>
             </select>
         </div>
 

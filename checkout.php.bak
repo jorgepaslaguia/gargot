@@ -51,7 +51,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     if (empty($errores)) {
 
         // 3. Crear pedido + detalle en una transacción
-        $conexion->begin_transaction();
+        $pdo->beginTransaction();
 
         try {
             $id_usuario = $_SESSION["id_usuario"] ?? null;
@@ -61,67 +61,53 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                            direccion, codigo_postal, ciudad, provincia, pais,
                            notas, fecha_pedido, estado, total, metodo_pago)
                           VALUES
-                          (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 'pending', ?, ?)";
+                          (:id_usuario, :nombre, :apellidos, :email, :telefono, :direccion, :codigo_postal, :ciudad, :provincia, :pais, :notas, NOW(), 'pending', :total, :metodo_pago)";
 
-            $stmtPedido = $conexion->prepare($sqlPedido);
-            if (!$stmtPedido) {
-                throw new Exception("Error al preparar pedido: " . $conexion->error);
-            }
+            $stmtPedido = $pdo->prepare($sqlPedido);
+            $stmtPedido->execute([
+                "id_usuario" => $id_usuario,
+                "nombre" => $nombre,
+                "apellidos" => $apellidos,
+                "email" => $email,
+                "telefono" => $telefono,
+                "direccion" => $direccion,
+                "codigo_postal" => $codigo_postal,
+                "ciudad" => $ciudad,
+                "provincia" => $provincia,
+                "pais" => $pais,
+                "notas" => $notas,
+                "total" => $total,
+                "metodo_pago" => $metodo_pago,
+            ]);
 
-            $stmtPedido->bind_param(
-                "issssssssssds",
-                $id_usuario,
-                $nombre,
-                $apellidos,
-                $email,
-                $telefono,
-                $direccion,
-                $codigo_postal,
-                $ciudad,
-                $provincia,
-                $pais,
-                $notas,
-                $total,
-                $metodo_pago
-            );
-
-
-            if (!$stmtPedido->execute()) {
-                throw new Exception("Error al ejecutar pedido: " . $stmtPedido->error);
-            }
-
-            $idPedidoNuevo = $stmtPedido->insert_id;
-            $stmtPedido->close();
+            $idPedidoNuevo = (int)$pdo->lastInsertId();
 
             // 4. Insertar líneas en detalle_pedido
             $sqlLinea = "INSERT INTO detalle_pedido
                          (id_pedido, id_producto, cantidad, precio_unitario)
-                         VALUES (?, ?, ?, ?)";
-            $stmtLinea = $conexion->prepare($sqlLinea);
-            if (!$stmtLinea) {
-                throw new Exception("Error al preparar detalle: " . $conexion->error);
-            }
+                         VALUES (:id_pedido, :id_producto, :cantidad, :precio_unitario)";
+            $stmtLinea = $pdo->prepare($sqlLinea);
 
             foreach ($carrito as $item) {
                 $idProd   = (int)$item["id"];
                 $cantidad = (int)$item["cantidad"];
                 $precio   = (float)$item["precio"];
 
-                $stmtLinea->bind_param("iiid", $idPedidoNuevo, $idProd, $cantidad, $precio);
-                if (!$stmtLinea->execute()) {
-                    throw new Exception("Error al insertar detalle: " . $stmtLinea->error);
-                }
+                $stmtLinea->execute([
+                    "id_pedido" => $idPedidoNuevo,
+                    "id_producto" => $idProd,
+                    "cantidad" => $cantidad,
+                    "precio_unitario" => $precio,
+                ]);
             }
 
-            $stmtLinea->close();
-
             // 5. Todo OK -> commit y vaciar carrito
-            $conexion->commit();
+            $pdo->commit();
             $pedidoCreado = true;
             unset($_SESSION["carrito"]);
 
         } catch (Exception $e) {
-            $conexion->rollback();
+            $pdo->rollBack();
             $errores[] = $e->getMessage();
         }
     }

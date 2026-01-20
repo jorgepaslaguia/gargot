@@ -27,8 +27,9 @@ $wishlistCount = !empty($_SESSION["wishlist"]) ? count($_SESSION["wishlist"]) : 
 
 // Visibilidad
 $hasVisibility = false;
-$colCheck = $conexion->query("SHOW COLUMNS FROM productos LIKE 'is_visible'");
-if ($colCheck && $colCheck->num_rows > 0) {
+$colCheck = $pdo->query("SHOW COLUMNS FROM productos LIKE 'is_visible'");
+$colRows = $colCheck ? $colCheck->fetchAll() : [];
+if (count($colRows) > 0) {
     $hasVisibility = true;
 }
 
@@ -39,15 +40,13 @@ if ($hasVisibility) {
 }
 $sql .= " FROM wishlist w
           JOIN productos p ON w.id_producto = p.id_producto
-          WHERE w.id_usuario = ?";
+          WHERE w.id_usuario = :id_usuario";
 if ($hasVisibility) {
     $sql .= " AND p.is_visible = 1";
 }
-$stmt = $conexion->prepare($sql);
-$stmt->bind_param("i", $id);
-$stmt->execute();
-$res = $stmt->get_result();
-$stmt->close();
+$stmt = $pdo->prepare($sql);
+$stmt->execute(["id_usuario" => $id]);
+$rows = $stmt->fetchAll();
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -62,12 +61,12 @@ $stmt->close();
 <main class="contenedor">
     <h1 class="titulo-pagina">WISHLIST</h1>
 
-    <?php if ($res && $res->num_rows == 0): ?>
+    <?php if (count($rows) === 0): ?>
         <p class="wishlist-empty">No items in your wishlist.</p>
-    <?php elseif ($res): ?>
+    <?php else: ?>
 
         <table class="cart-table wishlist-table">
-            <?php while ($p = $res->fetch_assoc()): ?>
+            <?php foreach ($rows as $p): ?>
                 <?php $isSoldOut = ((int)$p["stock"] <= 0); ?>
                 <tr>
                     <td class="cart-product">
@@ -104,11 +103,8 @@ $stmt->close();
                         </form>
                     </td>
                 </tr>
-            <?php endwhile; ?>
+            <?php endforeach; ?>
         </table>
-
-    <?php else: ?>
-        <p class="wishlist-empty">Error loading wishlist.</p>
     <?php endif; ?>
 </main>
 

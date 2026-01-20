@@ -13,8 +13,9 @@ $wishlistCount = !empty($_SESSION["wishlist"]) ? count($_SESSION["wishlist"]) : 
 
 // Visibilidad
 $hasVisibility = false;
-$colCheck = $conexion->query("SHOW COLUMNS FROM productos LIKE 'is_visible'");
-if ($colCheck && $colCheck->num_rows > 0) {
+$colCheck = $pdo->query("SHOW COLUMNS FROM productos LIKE 'is_visible'");
+$colRows = $colCheck ? $colCheck->fetchAll() : [];
+if (count($colRows) > 0) {
     $hasVisibility = true;
 }
 
@@ -50,30 +51,27 @@ if (!in_array($orden, $ordenPermitido, true)) {
 }
 
 // Lista marcas
-$resMarcas = $conexion->query("SELECT DISTINCT marca FROM productos WHERE marca IS NOT NULL AND marca <> '' ORDER BY marca ASC");
+$resMarcas = $pdo->query("SELECT DISTINCT marca FROM productos WHERE marca IS NOT NULL AND marca <> '' ORDER BY marca ASC");
+$marcas = $resMarcas ? $resMarcas->fetchAll() : [];
 
 // Query base
 $where = ["c.nombre = 'CLOTHING'"];
-$types = "";
 $params = [];
 
 if ($hasVisibility) {
     $where[] = "p.is_visible = 1";
 }
 if ($familia !== '') {
-    $where[] = "p.familia = ?";
-    $types  .= "s";
-    $params[] = $familia;
+    $where[] = "p.familia = :familia";
+    $params["familia"] = $familia;
 }
 if ($talla !== '') {
-    $where[] = "p.talla = ?";
-    $types  .= "s";
-    $params[] = $talla;
+    $where[] = "p.talla = :talla";
+    $params["talla"] = $talla;
 }
 if ($marca !== '') {
-    $where[] = "p.marca LIKE ?";
-    $types  .= "s";
-    $params[] = "%".$marca."%";
+    $where[] = "p.marca LIKE :marca";
+    $params["marca"] = "%" . $marca . "%";
 }
 // Filtro precio
 if ($precio === '<50')      { $where[] = "p.precio < 50"; }
@@ -97,12 +95,9 @@ $sql = "SELECT p.*, c.nombre AS categoria
         JOIN categorias c ON p.id_categoria = c.id_categoria
         WHERE ".implode(" AND ", $where). $ordenSQL;
 
-$stmt = $conexion->prepare($sql);
-if ($types !== "") {
-    $stmt->bind_param($types, ...$params);
-}
-$stmt->execute();
-$resultado = $stmt->get_result();
+$stmt = $pdo->prepare($sql);
+$stmt->execute($params);
+$rows = $stmt->fetchAll();
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -154,10 +149,10 @@ $resultado = $stmt->get_result();
                     brand
                     <input type="text" name="marca" list="lista_marcas" value="<?php echo htmlspecialchars($marca); ?>">
                     <datalist id="lista_marcas">
-                        <?php if ($resMarcas && $resMarcas->num_rows > 0): ?>
-                            <?php while ($m = $resMarcas->fetch_assoc()): ?>
+                        <?php if (count($marcas) > 0): ?>
+                            <?php foreach ($marcas as $m): ?>
                                 <option value="<?php echo htmlspecialchars($m["marca"]); ?>">
-                            <?php endwhile; ?>
+                            <?php endforeach; ?>
                         <?php endif; ?>
                     </datalist>
                 </label>
@@ -199,9 +194,9 @@ $resultado = $stmt->get_result();
         <a href="shop.php" class="btn-filtros-clear">clear</a>
     </form>
 
-    <?php if ($resultado && $resultado->num_rows > 0): ?>
+    <?php if (count($rows) > 0): ?>
         <div class="grid-productos">
-            <?php while ($p = $resultado->fetch_assoc()): ?>
+            <?php foreach ($rows as $p): ?>
                 <?php $isSoldOut = ((int)$p["stock"] <= 0); ?>
                 <div class="producto-card">
                     <a href="product_detail.php?id=<?php echo (int)$p["id_producto"]; ?>" style="color: inherit; text-decoration: none;">
@@ -249,7 +244,7 @@ $resultado = $stmt->get_result();
                         </div>
                     </a>
                 </div>
-            <?php endwhile; ?>
+            <?php endforeach; ?>
         </div>
     <?php else: ?>
         <p>No hay productos en Clothing.</p>

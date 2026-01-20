@@ -7,34 +7,25 @@ if (!isset($_SESSION["id_usuario"]) || $_SESSION["rol"] !== "admin") {
 
 require_once "../includes/conexion.php";
 
-function fetchAll($conexion, $sql, $types = '', $params = []) {
-    $stmt = $conexion->prepare($sql);
-    if ($types && $params) {
-        $stmt->bind_param($types, ...$params);
-    }
-    $stmt->execute();
-    $res = $stmt->get_result();
-    $rows = [];
-    while ($row = $res->fetch_assoc()) {
-        $rows[] = $row;
-    }
-    $stmt->close();
-    return $rows;
+function fetchAll($pdo, $sql, $params = []) {
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    return $stmt->fetchAll();
 }
 
-function fetchOne($conexion, $sql, $types = '', $params = [], $default = []) {
-    $rows = fetchAll($conexion, $sql, $types, $params);
+function fetchOne($pdo, $sql, $params = [], $default = []) {
+    $rows = fetchAll($pdo, $sql, $params);
     return $rows[0] ?? $default;
 }
 
 // KPI principales
-$totalPedidos = (int)fetchOne($conexion, "SELECT COUNT(*) AS total FROM pedidos")['total'];
+$totalPedidos = (int)fetchOne($pdo, "SELECT COUNT(*) AS total FROM pedidos")['total'];
 $ingresosTotales = (float)fetchOne(
-    $conexion,
+    $pdo,
     "SELECT COALESCE(SUM(total),0) AS ingresos FROM pedidos WHERE estado IN ('paid','shipped')"
 )['ingresos'];
 $pedidosPagados = (int)fetchOne(
-    $conexion,
+    $pdo,
     "SELECT COUNT(*) AS num FROM pedidos WHERE estado IN ('paid','shipped')"
 )['num'];
 $ticketMedioReal = $pedidosPagados > 0 ? $ingresosTotales / $pedidosPagados : 0;
@@ -42,13 +33,13 @@ $ticketMedioGlobal = $totalPedidos > 0 ? $ingresosTotales / $totalPedidos : 0;
 
 // Ingresos 30d y previos
 $win30 = fetchOne(
-    $conexion,
+    $pdo,
     "SELECT COALESCE(SUM(total),0) AS ingresos, COUNT(*) AS pedidos FROM pedidos WHERE fecha_pedido >= (NOW() - INTERVAL 30 DAY) AND estado IN ('paid','shipped')"
 );
 $ingresos30 = (float)($win30['ingresos'] ?? 0);
 $pedidos30  = (int)($win30['pedidos'] ?? 0);
 $prev30 = fetchOne(
-    $conexion,
+    $pdo,
     "SELECT COALESCE(SUM(total),0) AS ingresos FROM pedidos WHERE fecha_pedido >= (NOW() - INTERVAL 60 DAY) AND fecha_pedido < (NOW() - INTERVAL 30 DAY) AND estado IN ('paid','shipped')"
 );
 $ingresosPrev30 = (float)($prev30['ingresos'] ?? 0);
@@ -56,7 +47,7 @@ $growth30 = $ingresosPrev30 > 0 ? (($ingresos30 - $ingresosPrev30) / $ingresosPr
 
 // Totales pedidos 30d (para precio percentiles)
 $totales30 = fetchAll(
-    $conexion,
+    $pdo,
     "SELECT total FROM pedidos WHERE fecha_pedido >= (NOW() - INTERVAL 30 DAY) AND estado IN ('paid','shipped')"
 );
 $precioStats = ['avg' => null, 'p25' => null, 'p75' => null];
@@ -71,7 +62,7 @@ if (!empty($totales30)) {
 
 // Top marcas 30d
 $topMarcas = fetchAll(
-    $conexion,
+    $pdo,
     "SELECT COALESCE(p.marca,'unknown') AS marca,
             COUNT(DISTINCT p.id_producto) AS piezas,
             SUM(d.cantidad) AS unidades,
@@ -87,7 +78,7 @@ $topMarcas = fetchAll(
 
 // Piezas únicas 30d
 $piezasUnicas30 = (int)fetchOne(
-    $conexion,
+    $pdo,
     "SELECT COUNT(DISTINCT d.id_producto) AS piezas
      FROM detalle_pedido d
      JOIN pedidos pe ON pe.id_pedido = d.id_pedido
@@ -97,7 +88,7 @@ $piezasUnicas30 = (int)fetchOne(
 
 // Heatmap horas/días (bloques)
 $heatmap = fetchAll(
-    $conexion,
+    $pdo,
     "SELECT DATE_FORMAT(fecha_pedido, '%w') AS dow,
             DATE_FORMAT(fecha_pedido, '%H') AS hour,
             COUNT(*) AS pedidos
@@ -108,7 +99,7 @@ $heatmap = fetchAll(
 
 // Tallas 30d
 $tallas30 = fetchAll(
-    $conexion,
+    $pdo,
     "SELECT COALESCE(p.talla,'unknown') AS talla,
             SUM(d.cantidad) AS unidades,
             SUM(d.cantidad * d.precio_unitario) AS ingresos
@@ -122,19 +113,19 @@ $tallas30 = fetchAll(
 
 // Pedidos por estado
 $pedidosPorEstado = fetchAll(
-    $conexion,
+    $pdo,
     "SELECT estado, COUNT(*) AS num, COALESCE(SUM(total),0) AS ingresos FROM pedidos GROUP BY estado ORDER BY ingresos DESC"
 );
 
 // Métodos de pago
 $porMetodoPago = fetchAll(
-    $conexion,
+    $pdo,
     "SELECT COALESCE(metodo_pago,'unknown') AS metodo, COUNT(*) AS num, COALESCE(SUM(total),0) AS ingresos FROM pedidos GROUP BY metodo ORDER BY ingresos DESC"
 );
 
 // Tendencia mensual 12m
 $mensual = fetchAll(
-    $conexion,
+    $pdo,
     "SELECT DATE_FORMAT(fecha_pedido, '%Y-%m') AS ym,
             DATE_FORMAT(fecha_pedido, '%b %Y') AS etiqueta,
             COUNT(*) AS num,
@@ -148,7 +139,7 @@ $mensual = fetchAll(
 
 // Top productos 30d
 $topProductos = fetchAll(
-    $conexion,
+    $pdo,
     "SELECT p.id_producto, p.nombre, COALESCE(p.marca,'') AS marca,
             SUM(d.cantidad) AS unidades, SUM(d.cantidad * d.precio_unitario) AS ingresos
      FROM detalle_pedido d
@@ -162,7 +153,7 @@ $topProductos = fetchAll(
 
 // Top categorías 30d
 $topCategorias = fetchAll(
-    $conexion,
+    $pdo,
     "SELECT c.nombre AS categoria, SUM(d.cantidad) AS unidades, SUM(d.cantidad * d.precio_unitario) AS ingresos
      FROM detalle_pedido d
      JOIN pedidos pe ON pe.id_pedido = d.id_pedido
@@ -176,7 +167,7 @@ $topCategorias = fetchAll(
 
 // Stock vs demanda 30d
 $stockCobertura = fetchAll(
-    $conexion,
+    $pdo,
     "SELECT c.nombre AS categoria,
             COALESCE(SUM(p.stock),0) AS stock_total,
             COALESCE(SUM(d.cant_30),0) AS ventas_30
@@ -195,7 +186,7 @@ $stockCobertura = fetchAll(
 
 // Top clientes
 $topClientes = fetchAll(
-    $conexion,
+    $pdo,
     "SELECT COALESCE(email,'unknown') AS email, nombre, apellidos, COUNT(*) AS pedidos, COALESCE(SUM(total),0) AS ingresos
      FROM pedidos
      WHERE estado IN ('paid','shipped')
@@ -482,3 +473,4 @@ $topClientes = fetchAll(
 
 </body>
 </html>
+

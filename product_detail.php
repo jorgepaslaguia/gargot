@@ -11,8 +11,9 @@ $id = intval($_GET["id"]);
 
 // Visibilidad
 $hasVisibility = false;
-$colCheck = $conexion->query("SHOW COLUMNS FROM productos LIKE 'is_visible'");
-if ($colCheck && $colCheck->num_rows > 0) {
+$colCheck = $pdo->query("SHOW COLUMNS FROM productos LIKE 'is_visible'");
+$colRows = $colCheck ? $colCheck->fetchAll() : [];
+if (count($colRows) > 0) {
     $hasVisibility = true;
 }
 
@@ -20,19 +21,15 @@ if ($colCheck && $colCheck->num_rows > 0) {
 $sql = "SELECT p.*, c.nombre AS categoria
         FROM productos p
         JOIN categorias c ON p.id_categoria = c.id_categoria
-        WHERE p.id_producto = ?";
-$stmt = $conexion->prepare($sql);
-$stmt->bind_param("i", $id);
-$stmt->execute();
-$resultado = $stmt->get_result();
+        WHERE p.id_producto = :id_producto";
+$stmt = $pdo->prepare($sql);
+$stmt->execute(["id_producto" => $id]);
+$prod = $stmt->fetch();
 
-if ($resultado->num_rows === 0) {
+if ($prod === false) {
     header("Location: shop.php");
     exit();
 }
-
-$prod = $resultado->fetch_assoc();
-$stmt->close();
 
 if ($hasVisibility && isset($prod['is_visible']) && (int)$prod['is_visible'] !== 1) {
     header("Location: shop.php");
@@ -43,15 +40,13 @@ $isSoldOut = ((int)$prod['stock'] <= 0);
 
 // Obtener imÃ¡genes
 $imagenes = [];
-$sqlImg = "SELECT image_path FROM producto_imagenes WHERE id_producto = ? ORDER BY orden ASC, id ASC";
-$stmtImg = $conexion->prepare($sqlImg);
-$stmtImg->bind_param("i", $id);
-$stmtImg->execute();
-$resImg = $stmtImg->get_result();
-while ($row = $resImg->fetch_assoc()) {
+$sqlImg = "SELECT image_path FROM producto_imagenes WHERE id_producto = :id_producto ORDER BY orden ASC, id ASC";
+$stmtImg = $pdo->prepare($sqlImg);
+$stmtImg->execute(["id_producto" => $id]);
+$rowsImg = $stmtImg->fetchAll();
+foreach ($rowsImg as $row) {
     if (!empty($row["image_path"])) $imagenes[] = $row["image_path"];
 }
-$stmtImg->close();
 
 if (empty($imagenes) && !empty($prod["imagen"])) {
     $imagenes[] = $prod["imagen"];

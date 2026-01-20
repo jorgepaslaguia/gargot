@@ -19,30 +19,21 @@ $id = (int) $_POST["id_producto"];
 // =============================
 // 1) Obtener producto
 // =============================
-$sql = "SELECT * FROM productos WHERE id_producto = ? LIMIT 1";
-$stmt = $conexion->prepare($sql);
-if (!$stmt) {
+$sql = "SELECT * FROM productos WHERE id_producto = :id LIMIT 1";
+$stmt = $pdo->prepare($sql);
+$stmt->execute(["id" => $id]);
+$producto = $stmt->fetch();
+
+if ($producto === false) {
     header("Location: ../shop.php");
     exit();
 }
-
-$stmt->bind_param("i", $id);
-$stmt->execute();
-$res = $stmt->get_result();
-
-if ($res->num_rows === 0) {
-    $stmt->close();
-    header("Location: ../shop.php");
-    exit();
-}
-
-$producto = $res->fetch_assoc();
-$stmt->close();
 
 // Validar stock y visibilidad
 $hasVisibility = false;
-$colCheck = $conexion->query("SHOW COLUMNS FROM productos LIKE 'is_visible'");
-if ($colCheck && $colCheck->num_rows > 0) {
+$colCheck = $pdo->query("SHOW COLUMNS FROM productos LIKE 'is_visible'");
+$colRows = $colCheck ? $colCheck->fetchAll() : [];
+if (count($colRows) > 0) {
     $hasVisibility = true;
 }
 
@@ -67,18 +58,14 @@ $imagenPrincipal = $producto["imagen"];
 if (empty($imagenPrincipal)) {
     $sqlImg = "SELECT image_path 
                FROM producto_imagenes 
-               WHERE id_producto = ? 
+               WHERE id_producto = :id 
                ORDER BY orden ASC, id ASC 
                LIMIT 1";
-    $stmtImg = $conexion->prepare($sqlImg);
-    if ($stmtImg) {
-        $stmtImg->bind_param("i", $id);
-        $stmtImg->execute();
-        $resImg = $stmtImg->get_result();
-        if ($rowImg = $resImg->fetch_assoc()) {
-            $imagenPrincipal = $rowImg["image_path"];
-        }
-        $stmtImg->close();
+    $stmtImg = $pdo->prepare($sqlImg);
+    $stmtImg->execute(["id" => $id]);
+    $rowImg = $stmtImg->fetch();
+    if ($rowImg) {
+        $imagenPrincipal = $rowImg["image_path"];
     }
 }
 

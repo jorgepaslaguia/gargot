@@ -15,10 +15,9 @@ require_once "../includes/conexion.php";
 $id = isset($_GET['id']) ? intval($_GET['id']) : 0;
 
 if ($id > 0 && isset($_GET['delete']) && $_GET['delete'] == 1) {
-    $sqlDel = "DELETE FROM home_cards WHERE id = ?";
-    $stmtDel = $conexion->prepare($sqlDel);
-    $stmtDel->bind_param("i", $id);
-    $stmtDel->execute();
+    $sqlDel = "DELETE FROM home_cards WHERE id = :id";
+    $stmtDel = $pdo->prepare($sqlDel);
+    $stmtDel->execute(["id" => $id]);
     header("Location: home_cards.php");
     exit();
 }
@@ -38,12 +37,11 @@ $card = [
 if ($id > 0) {
     $sql = "SELECT id, title, subtitle, image_path, link_url, sort_order, active
             FROM home_cards
-            WHERE id = ?";
-    $stmt = $conexion->prepare($sql);
-    $stmt->bind_param("i", $id);
-    $stmt->execute();
-    $res = $stmt->get_result();
-    if ($fila = $res->fetch_assoc()) {
+            WHERE id = :id";
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute(["id" => $id]);
+    $fila = $stmt->fetch();
+    if ($fila) {
         $card = $fila;
     }
 }
@@ -89,24 +87,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($id > 0) {
         $sql = "UPDATE home_cards
-                SET title = ?, subtitle = ?, image_path = ?, link_url = ?, sort_order = ?, active = ?
-                WHERE id = ?";
-        $stmt = $conexion->prepare($sql);
-        $stmt->bind_param(
-            "ssssiii",
-            $title, $subtitle, $imagePath, $link_url, $sort_order, $active, $id
-        );
+                SET title = :title, subtitle = :subtitle, image_path = :image_path, link_url = :link_url, sort_order = :sort_order, active = :active
+                WHERE id = :id";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([
+            "title" => $title,
+            "subtitle" => $subtitle,
+            "image_path" => $imagePath,
+            "link_url" => $link_url,
+            "sort_order" => $sort_order,
+            "active" => $active,
+            "id" => $id,
+        ]);
     } else {
         $sql = "INSERT INTO home_cards (title, subtitle, image_path, link_url, sort_order, active)
-                VALUES (?, ?, ?, ?, ?, ?)";
-        $stmt = $conexion->prepare($sql);
-        $stmt->bind_param(
-            "ssssii",
-            $title, $subtitle, $imagePath, $link_url, $sort_order, $active
-        );
+                VALUES (:title, :subtitle, :image_path, :link_url, :sort_order, :active)";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([
+            "title" => $title,
+            "subtitle" => $subtitle,
+            "image_path" => $imagePath,
+            "link_url" => $link_url,
+            "sort_order" => $sort_order,
+            "active" => $active,
+        ]);
     }
 
-    $stmt->execute();
     header("Location: home_cards.php");
     exit();
 }

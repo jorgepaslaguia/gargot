@@ -16,22 +16,26 @@ $cartIssues = [];
 $carrito = $_SESSION["carrito"] ?? [];
 $ids = array_keys($carrito);
 $hasVisibility = false;
-$colCheck = $conexion->query("SHOW COLUMNS FROM productos LIKE 'is_visible'");
-if ($colCheck && $colCheck->num_rows > 0) $hasVisibility = true;
+$colCheck = $pdo->query("SHOW COLUMNS FROM productos LIKE 'is_visible'");
+$colRows = $colCheck ? $colCheck->fetchAll() : [];
+if (count($colRows) > 0) $hasVisibility = true;
 
 $stockMap = [];
 if (!empty($ids)) {
-    $placeholders = implode(',', array_fill(0, count($ids), '?'));
-    $types = str_repeat('i', count($ids));
-    $sql = "SELECT id_producto, stock" . ($hasVisibility ? ", is_visible" : "") . " FROM productos WHERE id_producto IN ($placeholders)";
-    $stmt = $conexion->prepare($sql);
-    $stmt->bind_param($types, ...$ids);
-    $stmt->execute();
-    $res = $stmt->get_result();
-    while ($row = $res->fetch_assoc()) {
+    $placeholders = [];
+    $params = [];
+    foreach ($ids as $index => $pid) {
+        $key = "id" . $index;
+        $placeholders[] = ":" . $key;
+        $params[$key] = (int)$pid;
+    }
+    $sql = "SELECT id_producto, stock" . ($hasVisibility ? ", is_visible" : "") . " FROM productos WHERE id_producto IN (" . implode(",", $placeholders) . ")";
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    $rows = $stmt->fetchAll();
+    foreach ($rows as $row) {
         $stockMap[$row['id_producto']] = $row;
     }
-    $stmt->close();
 }
 
 // Revalidar stock y visibilidad

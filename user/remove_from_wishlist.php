@@ -26,14 +26,12 @@ $id_usuario  = (int)$_SESSION["id_usuario"];
 $id_producto = (int)$_POST["id"];
 
 $sql = "DELETE FROM wishlist 
-        WHERE id_usuario = ? AND id_producto = ?";
-$stmt = $conexion->prepare($sql);
-
-if ($stmt) {
-    $stmt->bind_param("ii", $id_usuario, $id_producto);
-    $stmt->execute();
-    $stmt->close();
-}
+        WHERE id_usuario = :id_usuario AND id_producto = :id_producto";
+$stmt = $pdo->prepare($sql);
+$stmt->execute([
+    "id_usuario" => $id_usuario,
+    "id_producto" => $id_producto,
+]);
 
 header("Location: wishlist.php");
 exit();

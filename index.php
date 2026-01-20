@@ -94,8 +94,9 @@ if (!empty($_SESSION['wishlist'])) {
    HOME CARDS (página inicio)
    ========================= */
 $hasCardSize = false;
-$colCheck = $conexion->query("SHOW COLUMNS FROM home_cards LIKE 'card_size'");
-if ($colCheck && $colCheck->num_rows > 0) {
+$colCheck = $pdo->query("SHOW COLUMNS FROM home_cards LIKE 'card_size'");
+$colRows = $colCheck ? $colCheck->fetchAll() : [];
+if (count($colRows) > 0) {
     $hasCardSize = true;
 }
 
@@ -108,7 +109,8 @@ $sqlHomeCards = $hasCardSize
        FROM home_cards
        WHERE active = 1
        ORDER BY sort_order ASC, id ASC";
-$resHomeCards = $conexion->query($sqlHomeCards);
+$stmtHomeCards = $pdo->query($sqlHomeCards);
+$homeCards = $stmtHomeCards ? $stmtHomeCards->fetchAll() : [];
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -141,8 +143,8 @@ $resHomeCards = $conexion->query($sqlHomeCards);
 
     <!-- GRID DE BLOQUES (dinámico desde home_cards) -->
     <section class="home-grid">
-        <?php if ($resHomeCards && $resHomeCards->num_rows > 0): ?>
-            <?php while ($card = $resHomeCards->fetch_assoc()): ?>
+        <?php if (count($homeCards) > 0): ?>
+            <?php foreach ($homeCards as $card): ?>
                 <?php
                     $sizes = ['sm','md','lg','wide','tall'];
                     $cardSize = in_array($card['card_size'] ?? 'md', $sizes, true) ? $card['card_size'] : 'md';
@@ -165,7 +167,7 @@ $resHomeCards = $conexion->query($sqlHomeCards);
                         </span>
                     </div>
                 </a>
-            <?php endwhile; ?>
+            <?php endforeach; ?>
         <?php else: ?>
             <p class="txt-secundario">
                 no home cards configured yet. go to admin → home images.

@@ -32,32 +32,23 @@ $idProducto = (int)$_POST["id_producto"];
 $idUsuario  = (int)$_SESSION["id_usuario"];
 
 // 1) Comprobar que el producto existe
-$sql = "SELECT id_producto FROM productos WHERE id_producto = ? LIMIT 1";
-$stmt = $conexion->prepare($sql);
-if (!$stmt) {
+$sql = "SELECT id_producto FROM productos WHERE id_producto = :id LIMIT 1";
+$stmt = $pdo->prepare($sql);
+$stmt->execute(["id" => $idProducto]);
+$row = $stmt->fetch();
+
+if ($row === false) {
     header("Location: ../shop.php");
     exit();
 }
-
-$stmt->bind_param("i", $idProducto);
-$stmt->execute();
-$res = $stmt->get_result();
-
-if ($res->num_rows === 0) {
-    $stmt->close();
-    header("Location: ../shop.php");
-    exit();
-}
-$stmt->close();
 
 // 2) Insertar en wishlist (evitar duplicados con INSERT IGNORE)
-$sqlW = "INSERT IGNORE INTO wishlist (id_usuario, id_producto) VALUES (?, ?)";
-$stmtW = $conexion->prepare($sqlW);
-if ($stmtW) {
-    $stmtW->bind_param("ii", $idUsuario, $idProducto);
-    $stmtW->execute();
-    $stmtW->close();
-}
+$sqlW = "INSERT IGNORE INTO wishlist (id_usuario, id_producto) VALUES (:id_usuario, :id_producto)";
+$stmtW = $pdo->prepare($sqlW);
+$stmtW->execute([
+    "id_usuario" => $idUsuario,
+    "id_producto" => $idProducto,
+]);
 
 // Copia en sesion para contador
 if (!isset($_SESSION["wishlist"])) {
@@ -67,15 +58,12 @@ $_SESSION["wishlist"][$idProducto] = true;
 
 // Recalcular contador persistente
 $wishlistCount = 0;
-$sqlCount = "SELECT COUNT(*) AS total FROM wishlist WHERE id_usuario = ?";
-if ($stmtC = $conexion->prepare($sqlCount)) {
-    $stmtC->bind_param("i", $idUsuario);
-    $stmtC->execute();
-    $resC = $stmtC->get_result();
-    if ($rowC = $resC->fetch_assoc()) {
-        $wishlistCount = (int)$rowC["total"];
-    }
-    $stmtC->close();
+$sqlCount = "SELECT COUNT(*) AS total FROM wishlist WHERE id_usuario = :id_usuario";
+$stmtC = $pdo->prepare($sqlCount);
+$stmtC->execute(["id_usuario" => $idUsuario]);
+$rowC = $stmtC->fetch();
+if ($rowC) {
+    $wishlistCount = (int)$rowC["total"];
 }
 
 // Respuesta segun tipo

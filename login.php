@@ -21,12 +21,11 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     if ($email === "" || $password === "") {
         $errores[] = "Debes introducir email y contraseña.";
     } else {
-        $stmt = $conexion->prepare("SELECT id_usuario, nombre, rol, password FROM usuarios WHERE email = ?");
-        $stmt->bind_param("s", $email);
-        $stmt->execute();
-        $resultado = $stmt->get_result();
+        $stmt = $pdo->prepare("SELECT id_usuario, nombre, rol, password FROM usuarios WHERE email = :email");
+        $stmt->execute(["email" => $email]);
+        $fila = $stmt->fetch();
 
-        if ($fila = $resultado->fetch_assoc()) {
+        if ($fila) {
             $hashBD = $fila["password"];
             $loginOk = false;
 
@@ -36,12 +35,11 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 // Migration: hash antiguo en texto plano -> rehash y marcar ok
                 $loginOk = true;
                 $nuevoHash = password_hash($password, PASSWORD_DEFAULT);
-                $upd = $conexion->prepare("UPDATE usuarios SET password = ? WHERE id_usuario = ?");
-                if ($upd) {
-                    $upd->bind_param("si", $nuevoHash, $fila["id_usuario"]);
-                    $upd->execute();
-                    $upd->close();
-                }
+                $upd = $pdo->prepare("UPDATE usuarios SET password = :password WHERE id_usuario = :id_usuario");
+                $upd->execute([
+                    "password" => $nuevoHash,
+                    "id_usuario" => $fila["id_usuario"],
+                ]);
             }
 
             if ($loginOk) {
@@ -61,7 +59,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         } else {
             $errores[] = "Credenciales incorrectas.";
         }
-        $stmt->close();
     }
 }
 

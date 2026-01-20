@@ -25,14 +25,12 @@ if (
 
     if ($id_pedido > 0 && in_array($estado, $estados_validos, true)) {
 
-        $sql = "UPDATE pedidos SET estado = ? WHERE id_pedido = ?";
-        $stmt = $conexion->prepare($sql);
-
-        if ($stmt) {
-            $stmt->bind_param("si", $estado, $id_pedido);
-            $stmt->execute();
-            $stmt->close();
-        }
+        $sql = "UPDATE pedidos SET estado = :estado WHERE id_pedido = :id_pedido";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([
+            "estado" => $estado,
+            "id_pedido" => $id_pedido,
+        ]);
     }
 }
 

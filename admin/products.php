@@ -9,8 +9,9 @@ require_once "../includes/conexion.php";
 
 // Visibilidad
 $hasVisibility = false;
-$colCheck = $conexion->query("SHOW COLUMNS FROM productos LIKE 'is_visible'");
-if ($colCheck && $colCheck->num_rows > 0) {
+$colCheck = $pdo->query("SHOW COLUMNS FROM productos LIKE 'is_visible'");
+$colRows = $colCheck ? $colCheck->fetchAll() : [];
+if (count($colRows) > 0) {
     $hasVisibility = true;
 }
 
@@ -25,7 +26,8 @@ if ($hasVisibility) {
     $sql .= ", is_visible";
 }
 $sql .= " FROM productos ORDER BY id_producto DESC";
-$res = $conexion->query($sql);
+$stmt = $pdo->query($sql);
+$rows = $stmt ? $stmt->fetchAll() : [];
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -59,7 +61,7 @@ $res = $conexion->query($sql);
             <a href="product_edit.php" class="btn-admin">add_new_product</a>
         </div>
 
-        <?php if ($res && $res->num_rows > 0): ?>
+        <?php if (count($rows) > 0): ?>
             <table class="admin-table">
                 <thead>
                     <tr>
@@ -75,7 +77,7 @@ $res = $conexion->query($sql);
                     </tr>
                 </thead>
                 <tbody>
-                <?php while ($p = $res->fetch_assoc()): ?>
+                <?php foreach ($rows as $p): ?>
                     <tr>
                         <td><?php echo (int)$p["id_producto"]; ?></td>
                         <td>
@@ -129,7 +131,7 @@ $res = $conexion->query($sql);
                             <?php endif; ?>
                         </td>
                     </tr>
-                <?php endwhile; ?>
+                <?php endforeach; ?>
                 </tbody>
             </table>
         <?php else: ?>

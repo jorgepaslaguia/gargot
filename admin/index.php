@@ -25,43 +25,36 @@ if (!empty($_SESSION["wishlist"])) {
 
 // Métricas rápidas
 $hasVisibility = false;
-$colCheck = $conexion->query("SHOW COLUMNS FROM productos LIKE 'is_visible'");
-if ($colCheck && $colCheck->num_rows > 0) {
+$colCheck = $pdo->query("SHOW COLUMNS FROM productos LIKE 'is_visible'");
+$colRows = $colCheck ? $colCheck->fetchAll() : [];
+if (count($colRows) > 0) {
     $hasVisibility = true;
 }
 
-$totalProductos = (int)($conexion->query("SELECT COUNT(*) AS c FROM productos")->fetch_assoc()["c"] ?? 0);
+$totalProductos = (int)($pdo->query("SELECT COUNT(*) AS c FROM productos")->fetch()["c"] ?? 0);
 $ocultos = 0;
 if ($hasVisibility) {
-    $ocultos = (int)($conexion->query("SELECT COUNT(*) AS c FROM productos WHERE is_visible = 0")->fetch_assoc()["c"] ?? 0);
+    $ocultos = (int)($pdo->query("SELECT COUNT(*) AS c FROM productos WHERE is_visible = 0")->fetch()["c"] ?? 0);
 }
-$stockBajo = (int)($conexion->query("SELECT COUNT(*) AS c FROM productos WHERE stock <= 2")->fetch_assoc()["c"] ?? 0);
-$pedidosPend = (int)($conexion->query("SELECT COUNT(*) AS c FROM pedidos WHERE estado = 'pending'")->fetch_assoc()["c"] ?? 0);
-$montoPendiente = (float)($conexion->query("SELECT COALESCE(SUM(total),0) AS t FROM pedidos WHERE estado = 'pending'")->fetch_assoc()["t"] ?? 0);
-$monto7dias = (float)($conexion->query("SELECT COALESCE(SUM(total),0) AS t FROM pedidos WHERE fecha_pedido >= DATE_SUB(NOW(), INTERVAL 7 DAY)")->fetch_assoc()["t"] ?? 0);
+$stockBajo = (int)($pdo->query("SELECT COUNT(*) AS c FROM productos WHERE stock <= 2")->fetch()["c"] ?? 0);
+$pedidosPend = (int)($pdo->query("SELECT COUNT(*) AS c FROM pedidos WHERE estado = 'pending'")->fetch()["c"] ?? 0);
+$montoPendiente = (float)($pdo->query("SELECT COALESCE(SUM(total),0) AS t FROM pedidos WHERE estado = 'pending'")->fetch()["t"] ?? 0);
+$monto7dias = (float)($pdo->query("SELECT COALESCE(SUM(total),0) AS t FROM pedidos WHERE fecha_pedido >= DATE_SUB(NOW(), INTERVAL 7 DAY)")->fetch()["t"] ?? 0);
 $soldOutVisible = 0;
 if ($hasVisibility) {
-    $soldOutVisible = (int)($conexion->query("SELECT COUNT(*) AS c FROM productos WHERE stock <= 0 AND is_visible = 1")->fetch_assoc()["c"] ?? 0);
+    $soldOutVisible = (int)($pdo->query("SELECT COUNT(*) AS c FROM productos WHERE stock <= 0 AND is_visible = 1")->fetch()["c"] ?? 0);
 } else {
-    $soldOutVisible = (int)($conexion->query("SELECT COUNT(*) AS c FROM productos WHERE stock <= 0")->fetch_assoc()["c"] ?? 0);
+    $soldOutVisible = (int)($pdo->query("SELECT COUNT(*) AS c FROM productos WHERE stock <= 0")->fetch()["c"] ?? 0);
 }
 
 $lowStockRows = [];
-$resLow = $conexion->query("SELECT id_producto, nombre, stock FROM productos ORDER BY stock ASC, id_producto ASC LIMIT 5");
-if ($resLow && $resLow->num_rows > 0) {
-    while ($r = $resLow->fetch_assoc()) {
-        $lowStockRows[] = $r;
-    }
-}
+$resLow = $pdo->query("SELECT id_producto, nombre, stock FROM productos ORDER BY stock ASC, id_producto ASC LIMIT 5");
+$lowStockRows = $resLow ? $resLow->fetchAll() : [];
 
 // pedidos recientes
 $recentOrders = [];
-$resOrders = $conexion->query("SELECT id_pedido, nombre, apellidos, total, estado, fecha_pedido FROM pedidos ORDER BY fecha_pedido DESC, id_pedido DESC LIMIT 5");
-if ($resOrders && $resOrders->num_rows > 0) {
-    while ($o = $resOrders->fetch_assoc()) {
-        $recentOrders[] = $o;
-    }
-}
+$resOrders = $pdo->query("SELECT id_pedido, nombre, apellidos, total, estado, fecha_pedido FROM pedidos ORDER BY fecha_pedido DESC, id_pedido DESC LIMIT 5");
+$recentOrders = $resOrders ? $resOrders->fetchAll() : [];
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -156,7 +149,7 @@ if ($resOrders && $resOrders->num_rows > 0) {
                                     <td><?php echo htmlspecialchars($row["nombre"]); ?></td>
                                     <td><?php echo (int)$row["stock"]; ?></td>
                                     <td>
-                                        <a class="admin-link" href="edit_product.php?id=<?php echo (int)$row["id_producto"]; ?>">editar</a>
+                                        <a class="admin-link" href="product_edit.php?id=<?php echo (int)$row["id_producto"]; ?>">editar</a>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>
@@ -217,7 +210,7 @@ if ($resOrders && $resOrders->num_rows > 0) {
                                     <td><?php echo htmlspecialchars($row["nombre"]); ?></td>
                                     <td><?php echo (int)$row["stock"]; ?></td>
                                     <td>
-                                        <a class="admin-link" href="edit_product.php?id=<?php echo (int)$row["id_producto"]; ?>">editar</a>
+                                        <a class="admin-link" href="product_edit.php?id=<?php echo (int)$row["id_producto"]; ?>">editar</a>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>

@@ -13,8 +13,9 @@ $wishlistCount = !empty($_SESSION["wishlist"]) ? count($_SESSION["wishlist"]) : 
 
 // Visibilidad (si existe la columna)
 $hasVisibility = false;
-$colCheck = $conexion->query("SHOW COLUMNS FROM productos LIKE 'is_visible'");
-if ($colCheck && $colCheck->num_rows > 0) {
+$colCheck = $pdo->query("SHOW COLUMNS FROM productos LIKE 'is_visible'");
+$colRows = $colCheck ? $colCheck->fetchAll() : [];
+if (count($colRows) > 0) {
     $hasVisibility = true;
 }
 
@@ -29,7 +30,8 @@ if ($hasVisibility) {
 }
 
 $sql .= " ORDER BY p.fecha_creacion DESC LIMIT 12";
-$resultado = $conexion->query($sql);
+$stmt = $pdo->query($sql);
+$rows = $stmt ? $stmt->fetchAll() : [];
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -46,9 +48,9 @@ $resultado = $conexion->query($sql);
 <main class="contenedor">
     <h1 class="titulo-pagina">NEW IN</h1>
 
-    <?php if ($resultado && $resultado->num_rows > 0): ?>
+    <?php if (count($rows) > 0): ?>
         <div class="grid-productos">
-            <?php while ($p = $resultado->fetch_assoc()): ?>
+            <?php foreach ($rows as $p): ?>
                 <?php $isSoldOut = ((int)$p["stock"] <= 0); ?>
                 <div class="producto-card">
                     <a href="product_detail.php?id=<?php echo (int)$p["id_producto"]; ?>"
@@ -108,7 +110,7 @@ $resultado = $conexion->query($sql);
 
                     </a>
                 </div>
-            <?php endwhile; ?>
+            <?php endforeach; ?>
         </div>
     <?php else: ?>
         <p>No hay productos nuevos por ahora.</p>

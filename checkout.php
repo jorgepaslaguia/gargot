@@ -4,16 +4,10 @@ require_once "includes/conexion.php";
 
 // Helper fetchOne si no existe
 if (!function_exists('fetchOne')) {
-    function fetchOne(mysqli $cx, string $sql, string $types = "", array $params = []) {
-        $stmt = $cx->prepare($sql);
-        if (!$stmt) return [];
-        if ($types && $params) {
-            $stmt->bind_param($types, ...$params);
-        }
-        $stmt->execute();
-        $res = $stmt->get_result();
-        $row = $res ? $res->fetch_assoc() : [];
-        $stmt->close();
+    function fetchOne(PDO $pdo, string $sql, array $params = []) {
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
+        $row = $stmt->fetch();
         return $row ?: [];
     }
 }
@@ -32,22 +26,26 @@ $checkoutIssues = [];
 // Revalidar stock/visibilidad antes de checkout
 $ids = array_keys($carrito);
 $hasVisibility = false;
-$colCheck = $conexion->query("SHOW COLUMNS FROM productos LIKE 'is_visible'");
-if ($colCheck && $colCheck->num_rows > 0) $hasVisibility = true;
+$colCheck = $pdo->query("SHOW COLUMNS FROM productos LIKE 'is_visible'");
+$colRows = $colCheck ? $colCheck->fetchAll() : [];
+if (count($colRows) > 0) $hasVisibility = true;
 
 $stockMap = [];
 if (!empty($ids)) {
-    $placeholders = implode(',', array_fill(0, count($ids), '?'));
-    $types = str_repeat('i', count($ids));
-    $sql = "SELECT id_producto, stock" . ($hasVisibility ? ", is_visible" : "") . " FROM productos WHERE id_producto IN ($placeholders)";
-    $stmt = $conexion->prepare($sql);
-    $stmt->bind_param($types, ...$ids);
-    $stmt->execute();
-    $res = $stmt->get_result();
-    while ($row = $res->fetch_assoc()) {
+    $placeholders = [];
+    $params = [];
+    foreach ($ids as $index => $pid) {
+        $key = "id" . $index;
+        $placeholders[] = ":" . $key;
+        $params[$key] = (int)$pid;
+    }
+    $sql = "SELECT id_producto, stock" . ($hasVisibility ? ", is_visible" : "") . " FROM productos WHERE id_producto IN (" . implode(",", $placeholders) . ")";
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    $rows = $stmt->fetchAll();
+    foreach ($rows as $row) {
         $stockMap[$row['id_producto']] = $row;
     }
-    $stmt->close();
 }
 
 foreach ($carrito as $pid => &$item) {
@@ -117,7 +115,9 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         foreach ($carrito as $item) {
             $idProd = (int)$item["id"];
             $cantidad = (int)$item["cantidad"];
-            $rowStock = fetchOne($conexion, "SELECT stock FROM productos WHERE id_producto = ?", "i", [$idProd]);
+            $rowStock = fetchOne($pdo, "SELECT stock FROM productos WHERE id_producto = :id_producto", [
+                "id_producto" => $idProd,
+            ]);
             $stockProd = isset($rowStock['stock']) ? (int)$rowStock['stock'] : 0;
             if ($cantidad > $stockProd) {
                 $errores[] = "No queda stock suficiente de " . $item["nombre"] . " (quedan " . $stockProd . ").";
@@ -126,7 +126,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     }
 
     if (empty($errores)) {
-        $conexion->begin_transaction();
+        $pdo->beginTransaction();
         try {
             $id_usuario = $_SESSION["id_usuario"] ?? null;
 
@@ -135,62 +135,58 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                            direccion, codigo_postal, ciudad, provincia, pais,
                            notas, fecha_pedido, estado, total, metodo_pago)
                           VALUES
-                          (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 'pending', ?, ?)";
-            $stmtPedido = $conexion->prepare($sqlPedido);
-            if (!$stmtPedido) throw new Exception("Error al preparar pedido: " . $conexion->error);
+                          (:id_usuario, :nombre, :apellidos, :email, :telefono, :direccion, :codigo_postal, :ciudad, :provincia, :pais, :notas, NOW(), 'pending', :total, :metodo_pago)";
+            $stmtPedido = $pdo->prepare($sqlPedido);
+            $stmtPedido->execute([
+                "id_usuario" => $id_usuario,
+                "nombre" => $nombre,
+                "apellidos" => $apellidos,
+                "email" => $email,
+                "telefono" => $telefono,
+                "direccion" => $direccion,
+                "codigo_postal" => $codigo_postal,
+                "ciudad" => $ciudad,
+                "provincia" => $provincia,
+                "pais" => $pais,
+                "notas" => $notas,
+                "total" => $total,
+                "metodo_pago" => $metodo_pago,
+            ]);
 
-            $stmtPedido->bind_param(
-                "issssssssssds",
-                $id_usuario,
-                $nombre,
-                $apellidos,
-                $email,
-                $telefono,
-                $direccion,
-                $codigo_postal,
-                $ciudad,
-                $provincia,
-                $pais,
-                $notas,
-                $total,
-                $metodo_pago
-            );
-            if (!$stmtPedido->execute()) throw new Exception("Error al ejecutar pedido: " . $stmtPedido->error);
+            $idPedidoNuevo = (int)$pdo->lastInsertId();
 
-            $idPedidoNuevo = $stmtPedido->insert_id;
-            $stmtPedido->close();
-
-            $sqlLinea = "INSERT INTO detalle_pedido (id_pedido, id_producto, cantidad, precio_unitario) VALUES (?, ?, ?, ?)";
-            $stmtLinea = $conexion->prepare($sqlLinea);
-            if (!$stmtLinea) throw new Exception("Error al preparar detalle: " . $conexion->error);
+            $sqlLinea = "INSERT INTO detalle_pedido (id_pedido, id_producto, cantidad, precio_unitario) VALUES (:id_pedido, :id_producto, :cantidad, :precio_unitario)";
+            $stmtLinea = $pdo->prepare($sqlLinea);
 
             foreach ($carrito as $item) {
                 $idProd   = (int)$item["id"];
                 $cantidad = (int)$item["cantidad"];
                 $precio   = (float)$item["precio"];
-                $stmtLinea->bind_param("iiid", $idPedidoNuevo, $idProd, $cantidad, $precio);
-                if (!$stmtLinea->execute()) throw new Exception("Error al insertar detalle: " . $stmtLinea->error);
+                $stmtLinea->execute([
+                    "id_pedido" => $idPedidoNuevo,
+                    "id_producto" => $idProd,
+                    "cantidad" => $cantidad,
+                    "precio_unitario" => $precio,
+                ]);
             }
-            $stmtLinea->close();
 
             // Decrementar stock
-            $stmtStock = $conexion->prepare("UPDATE productos SET stock = GREATEST(stock - ?, 0) WHERE id_producto = ?");
-            if ($stmtStock) {
-                foreach ($carrito as $item) {
-                    $idProd   = (int)$item["id"];
-                    $cantidad = (int)$item["cantidad"];
-                    $stmtStock->bind_param("ii", $cantidad, $idProd);
-                    $stmtStock->execute();
-                }
-                $stmtStock->close();
+            $stmtStock = $pdo->prepare("UPDATE productos SET stock = GREATEST(stock - :cantidad, 0) WHERE id_producto = :id_producto");
+            foreach ($carrito as $item) {
+                $idProd   = (int)$item["id"];
+                $cantidad = (int)$item["cantidad"];
+                $stmtStock->execute([
+                    "cantidad" => $cantidad,
+                    "id_producto" => $idProd,
+                ]);
             }
 
-            $conexion->commit();
+            $pdo->commit();
             $pedidoCreado = true;
             unset($_SESSION["carrito"]);
             $carrito = [];
         } catch (Exception $e) {
-            $conexion->rollback();
+            $pdo->rollBack();
             $errores[] = $e->getMessage();
         }
     }

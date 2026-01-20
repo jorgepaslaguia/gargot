@@ -24,26 +24,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'], $_POST['id'
     } else {
         $id = (int)$_POST['id'];
         $newHash = password_hash(bin2hex(random_bytes(8)), PASSWORD_DEFAULT);
-        $stmt = $conexion->prepare("UPDATE usuarios SET password = ? WHERE id_usuario = ?");
-        if ($stmt) {
-            $stmt->bind_param("si", $newHash, $id);
-            if ($stmt->execute()) {
-                $message = "Reset aplicado al usuario ID $id";
-            } else {
-                $message = "Error al resetear ID $id";
-            }
-            $stmt->close();
+        $stmt = $pdo->prepare("UPDATE usuarios SET password = :password WHERE id_usuario = :id_usuario");
+        if ($stmt->execute([
+            "password" => $newHash,
+            "id_usuario" => $id,
+        ])) {
+            $message = "Reset aplicado al usuario ID $id";
+        } else {
+            $message = "Error al resetear ID $id";
         }
     }
 }
 
 $sospechosos = [];
-$res = $conexion->query("SELECT id_usuario, email, password FROM usuarios");
-if ($res) {
-    while ($row = $res->fetch_assoc()) {
-        if (is_plain_password($row['password'])) {
-            $sospechosos[] = $row;
-        }
+$res = $pdo->query("SELECT id_usuario, email, password FROM usuarios");
+$rows = $res ? $res->fetchAll() : [];
+foreach ($rows as $row) {
+    if (is_plain_password($row['password'])) {
+        $sospechosos[] = $row;
     }
 }
 ?>
